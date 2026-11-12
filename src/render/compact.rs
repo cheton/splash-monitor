@@ -59,10 +59,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     }
 
     draw_box(grid, theme, x, 1, w, header_h, "SPLASH MONITOR");
-    let (label, label_color) = if frame.view.online {
-        ("● LIVE", theme.good)
-    } else {
+    let (label, label_color) = if !frame.view.online {
         ("● OFFLINE", theme.critical)
+    } else if frame.view.gateway {
+        ("● GATEWAY", theme.data)
+    } else {
+        ("● LIVE", theme.good)
     };
     grid.at(x + 2, 2, Some(label_color), label, 999);
     if cols >= 86 {
@@ -103,10 +105,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
         draw_box(grid, theme, x, start, leftw, th, "STATUS / INFERENCE");
         draw_box(grid, theme, rightx, start, rightw, th, "HARDWARE / THERMAL");
 
-        let (label, label_color) = if frame.view.online {
-            ("● ONLINE", theme.good)
-        } else {
+        let (label, label_color) = if !frame.view.online {
             ("● OFFLINE", theme.critical)
+        } else if frame.view.gateway {
+            ("● GATEWAY", theme.data)
+        } else {
+            ("● ONLINE", theme.good)
         };
         grid.at(x + 2, start + 1, Some(label_color), label, 999);
         grid.at(
@@ -186,10 +190,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
         }
     } else {
         draw_box(grid, theme, x, start, w, th, "RESOURCE STATUS");
-        let (label, label_color) = if frame.view.online {
-            ("ONLINE", theme.good)
-        } else {
+        let (label, label_color) = if !frame.view.online {
             ("OFFLINE", theme.critical)
+        } else if frame.view.gateway {
+            ("GATEWAY", theme.data)
+        } else {
+            ("ONLINE", theme.good)
         };
         grid.at(x + 2, start + 1, Some(label_color), label, 999);
         grid.at(
