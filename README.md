@@ -45,6 +45,7 @@ The machine that runs the binary needs no Rust toolchain.
 |:--|:--|
 | `-i, --interval SECONDS` | Refresh interval, default 5, minimum 1 |
 | `-u, --url BASE_URL` | Splash base URL, default `http://127.0.0.1:18000` |
+| `--api-key KEY` | Bearer token, when the server was started with `--api-key` or `SPLASH_API_KEY` |
 | `-l, --log FILE` | Append one row per frame to a CSV file |
 | `--cache-dir PATH` | Optional device-level I/O diagnostics for the volume holding `PATH` |
 | `--no-sensors` | Do not query hardware sensors |
@@ -61,10 +62,11 @@ The machine that runs the binary needs no Rust toolchain.
 | `SPLASH_URL` | Full base URL, same form as `--url` |
 | `SPLASH_HOST` | Host only, default `127.0.0.1` |
 | `SPLASH_PORT` | Port only, default `18000` |
+| `SPLASH_API_KEY` | Bearer token, same form as `--api-key` |
 | `SPLASH_CACHE_DIR` | Default path for `--cache-dir` |
 | `SPLASH_THEME` | Default palette: `auto`, `dark`, `light` |
 
-Precedence: `--url` > `SPLASH_URL` > `SPLASH_HOST` / `SPLASH_PORT` > default `http://127.0.0.1:18000`. `--theme` wins over `SPLASH_THEME`.
+Precedence: `--url` > `SPLASH_URL` > `SPLASH_HOST` / `SPLASH_PORT` > default `http://127.0.0.1:18000`. `--theme` wins over `SPLASH_THEME`, and `--api-key` wins over `SPLASH_API_KEY`. A server that needs a key answers `401` to `/status`; the monitor then shows `OFFLINE`.
 
 `auto` asks the terminal through `COLORFGBG`: a background index of 7 or 15 selects the light palette, anything else (including no hint at all) stays dark. `--no-color`, `NO_COLOR`, or `TERM=dumb` turn colors off entirely.
 

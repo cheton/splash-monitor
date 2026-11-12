@@ -17,6 +17,7 @@ pub struct Options {
     pub debug_sensors: bool,
     pub json: bool,
     pub fixtures: Option<PathBuf>,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -55,6 +56,7 @@ context capacity, KV spill, swap rates, pressure and in-session history.\n\
 Options:\n\
   -i, --interval SECONDS   Refresh interval, default 5 (minimum 1)\n\
   -u, --url BASE_URL       Splash URL, default http://127.0.0.1:18000\n\
+      --api-key KEY        Bearer token for a Splash server that requires one\n\
   -l, --log FILE           Append measurements to CSV\n\
       --cache-dir PATH     Optional device-level I/O diagnostics\n\
       --no-sensors         Do not query optional hardware sensors\n\
@@ -70,6 +72,7 @@ Environment (read once at startup):\n\
   SPLASH_URL                 Full base URL, same form as --url\n\
   SPLASH_HOST                Host only, default 127.0.0.1\n\
   SPLASH_PORT                Port only, default 18000\n\
+  SPLASH_API_KEY             Bearer token, same form as --api-key\n\
   SPLASH_CACHE_DIR           Default path for --cache-dir\n\
   SPLASH_THEME                 Default palette: auto, dark, light\n\
 Priority: --url > SPLASH_URL > SPLASH_HOST / SPLASH_PORT > default.\n\
@@ -134,6 +137,7 @@ pub fn parse(
     let mut debug_sensors = false;
     let mut json = false;
     let mut fixtures: Option<PathBuf> = None;
+    let mut api_key = env_value(env, "SPLASH_API_KEY");
     let mut url_from_cli = None;
 
     let mut args = args.peekable();
@@ -154,6 +158,7 @@ pub fn parse(
                 );
             }
             "-l" | "--log" => log_file = Some(PathBuf::from(take_value("--log")?)),
+            "--api-key" => api_key = Some(take_value("--api-key")?),
             "--cache-dir" => cache_dir = Some(PathBuf::from(take_value("--cache-dir")?)),
             "--no-sensors" => sensors = false,
             "--once" => once = true,
@@ -175,6 +180,7 @@ pub fn parse(
                     debug_sensors: false,
                     json: false,
                     fixtures: None,
+                    api_key: None,
                 })
             }
             _ => {
@@ -216,5 +222,6 @@ pub fn parse(
         debug_sensors,
         json,
         fixtures,
+        api_key,
     })
 }
