@@ -111,6 +111,7 @@ fn missing_option_value_shows_usage() {
         "--theme",
         "--gateway",
         "--gateway-key",
+        "--api-key",
     ] {
         let error = parse(&[flag]).expect_err("expected a CLI error");
         assert_eq!(error.code, 2);
@@ -273,6 +274,29 @@ fn gateway_is_quiet_when_the_engine_answers() {
         gateway.paths().is_empty(),
         "gateway polled: {:?}",
         gateway.paths()
+    );
+}
+
+#[test]
+fn api_key_flag_overrides_environment() {
+    assert!(parse(&[]).expect("parse").api_key.is_none());
+    assert!(parse_with(&[], &[("SPLASH_API_KEY", "")])
+        .expect("empty environment")
+        .api_key
+        .is_none());
+    assert_eq!(
+        parse_with(&[], &[("SPLASH_API_KEY", "env-key")])
+            .expect("environment")
+            .api_key
+            .as_deref(),
+        Some("env-key")
+    );
+    assert_eq!(
+        parse_with(&["--api-key", "cli-key"], &[("SPLASH_API_KEY", "env-key")])
+            .expect("flag wins")
+            .api_key
+            .as_deref(),
+        Some("cli-key")
     );
 }
 
@@ -453,6 +477,83 @@ fn url_flag_beats_splash_url_for_the_actual_request() {
     assert!(stdout.contains("STANDBY"), "body came from --url");
     assert_eq!(chosen.paths(), vec!["/status".to_string()]);
     assert!(ignored.paths().is_empty(), "SPLASH_URL must lose");
+}
+
+#[test]
+fn api_key_authenticates_status_requests_and_401_is_offline() {
+    let server = TestServer::start_with_auth(BASE_STATUS, Some("cli-key"));
+    let args = ["--once", "--no-sensors", "--url", server.url.as_str()];
+
+    let output = common::run_binary(&args, &[]);
+    let (code, stdout, _) = common::codes(&output);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("OFFLINE"), "missing key must be rejected");
+    assert_eq!(server.authorization_headers(), vec![None]);
+
+    let output = common::run_binary(&args, &[("SPLASH_API_KEY", "wrong-key")]);
+    let (code, stdout, _) = common::codes(&output);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("OFFLINE"), "401 must render offline");
+
+    let output = common::run_binary(&args, &[("SPLASH_API_KEY", "cli-key")]);
+    let (code, stdout, _) = common::codes(&output);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("STANDBY"),
+        "environment key must authenticate"
+    );
+
+    let output = common::run_binary(
+        &[
+            "--once",
+            "--no-sensors",
+            "--url",
+            &server.url,
+            "--api-key",
+            "cli-key",
+        ],
+        &[("SPLASH_API_KEY", "wrong-key")],
+    );
+    let (code, stdout, _) = common::codes(&output);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("STANDBY"),
+        "CLI key must override environment"
+    );
+    assert_eq!(server.paths(), vec!["/status"; 4]);
+    assert_eq!(
+        server.authorization_headers(),
+        vec![
+            None,
+            Some("Bearer wrong-key".to_string()),
+            Some("Bearer cli-key".to_string()),
+            Some("Bearer cli-key".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn json_mode_sends_the_bearer_key_on_both_status_requests() {
+    let server = TestServer::start_with_auth(BASE_STATUS, Some("cli-key"));
+    let output = common::run_binary(
+        &[
+            "--json",
+            "--no-sensors",
+            "--url",
+            &server.url,
+            "--api-key",
+            "cli-key",
+        ],
+        &[],
+    );
+    let (code, stdout, stderr) = common::codes(&output);
+    assert_eq!(code, 0, "stderr {stderr}");
+    serde_json::from_str::<serde_json::Value>(&stdout).expect("JSON output");
+    assert_eq!(server.paths(), vec!["/status"; 2]);
+    assert_eq!(
+        server.authorization_headers(),
+        vec![Some("Bearer cli-key".to_string()); 2]
+    );
 }
 
 #[test]
