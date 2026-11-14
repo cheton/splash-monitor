@@ -358,7 +358,10 @@ impl TestServer {
     }
 
     pub fn authorization_headers(&self) -> Vec<Option<String>> {
-        self.authorization.lock().expect("authorization lock").clone()
+        self.authorization
+            .lock()
+            .expect("authorization lock")
+            .clone()
     }
 
     pub fn wait_for_requests(&self, count: usize) -> bool {
@@ -408,7 +411,10 @@ fn serve(
     let authorized = expected_authorization
         .map(|expected| auth_header.as_deref() == Some(expected))
         .unwrap_or(true);
-    authorization.lock().expect("authorization lock").push(auth_header);
+    authorization
+        .lock()
+        .expect("authorization lock")
+        .push(auth_header);
     paths.lock().expect("paths lock").push(path);
     let payload = body.lock().expect("body lock").clone();
     let status = if authorized {

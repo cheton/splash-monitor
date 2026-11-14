@@ -14,11 +14,7 @@ pub fn build_agent() -> ureq::Agent {
 /// failures all mean "offline": no status text. A `Bearer` header is sent when
 /// a key is given, which Splash requires whenever it was started with
 /// `--api-key` or `SPLASH_API_KEY`.
-pub fn fetch_status(
-    agent: &ureq::Agent,
-    base_url: &str,
-    api_key: Option<&str>,
-) -> Option<String> {
+pub fn fetch_status(agent: &ureq::Agent, base_url: &str, api_key: Option<&str>) -> Option<String> {
     let url = format!("{base_url}/status");
     let mut request = agent.get(url);
     if let Some(key) = api_key {

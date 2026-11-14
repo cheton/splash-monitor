@@ -400,15 +400,28 @@ fn api_key_authenticates_status_requests_and_401_is_offline() {
     let output = common::run_binary(&args, &[("SPLASH_API_KEY", "cli-key")]);
     let (code, stdout, _) = common::codes(&output);
     assert_eq!(code, 0);
-    assert!(stdout.contains("STANDBY"), "environment key must authenticate");
+    assert!(
+        stdout.contains("STANDBY"),
+        "environment key must authenticate"
+    );
 
     let output = common::run_binary(
-        &["--once", "--no-sensors", "--url", &server.url, "--api-key", "cli-key"],
+        &[
+            "--once",
+            "--no-sensors",
+            "--url",
+            &server.url,
+            "--api-key",
+            "cli-key",
+        ],
         &[("SPLASH_API_KEY", "wrong-key")],
     );
     let (code, stdout, _) = common::codes(&output);
     assert_eq!(code, 0);
-    assert!(stdout.contains("STANDBY"), "CLI key must override environment");
+    assert!(
+        stdout.contains("STANDBY"),
+        "CLI key must override environment"
+    );
     assert_eq!(server.paths(), vec!["/status"; 4]);
     assert_eq!(
         server.authorization_headers(),
@@ -425,7 +438,14 @@ fn api_key_authenticates_status_requests_and_401_is_offline() {
 fn json_mode_sends_the_bearer_key_on_both_status_requests() {
     let server = TestServer::start_with_auth(BASE_STATUS, Some("cli-key"));
     let output = common::run_binary(
-        &["--json", "--no-sensors", "--url", &server.url, "--api-key", "cli-key"],
+        &[
+            "--json",
+            "--no-sensors",
+            "--url",
+            &server.url,
+            "--api-key",
+            "cli-key",
+        ],
         &[],
     );
     let (code, stdout, stderr) = common::codes(&output);

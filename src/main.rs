@@ -145,7 +145,11 @@ fn collect_frame(
     i64,
 ) {
     let now = now_epoch();
-    let body = http::fetch_status(&dashboard.agent, &options.base_url, options.api_key.as_deref());
+    let body = http::fetch_status(
+        &dashboard.agent,
+        &options.base_url,
+        options.api_key.as_deref(),
+    );
     let view = status::parse_status(body.as_deref());
     let sample = probe.sample();
     let rates = dashboard.state.update_frame(&view, &sample, now);
