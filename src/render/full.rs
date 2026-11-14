@@ -104,6 +104,8 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     draw_box(grid, theme, x, 1, w, 3, "SPLASH MONITOR");
     let (label, label_color) = if !frame.view.online {
         ("● OFFLINE", theme.critical)
+    } else if frame.view.gateway {
+        ("● GATEWAY", theme.data)
     } else if frame.view.active > 0 {
         ("● RUNNING", theme.good)
     } else if frame.view.released == "true" {

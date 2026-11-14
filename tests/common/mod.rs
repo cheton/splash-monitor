@@ -20,6 +20,51 @@ use splash_monitor::theme::Theme;
 /// One timestamp shared by every derived rate in the fixtures.
 pub const NOW: i64 = 1_731_225_600;
 
+/// Baseline oMLX gateway `GET /admin/api/stats` body, shaped like the live
+/// payload the oMLX web console renders: `active_models` request totals and
+/// memory, lifetime token counters, and a Splash-tier cache model.
+pub const GATEWAY_STATS: &str = r#"{
+  "active_models": {
+    "models": [{
+      "id": "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S",
+      "active_requests": 1,
+      "waiting_requests": 2,
+      "waiting": [],
+      "prefilling": [],
+      "generating": ["req-1"],
+      "idle_seconds": 0.01
+    }],
+    "model_memory_used": 83192376848,
+    "model_memory_max": 115974014416,
+    "memory_pressure": {
+      "current_bytes": 83192376848,
+      "soft_bytes": 104376612974,
+      "hard_bytes": 110175313695
+    },
+    "total_active_requests": 1,
+    "total_waiting_requests": 2
+  },
+  "avg_generation_tps": 111.4,
+  "avg_prefill_tps": 1623.6,
+  "total_requests": 221,
+  "total_prompt_tokens": 7960462,
+  "total_completion_tokens": 113514,
+  "runtime_cache": {
+    "models": [{
+      "id": "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S",
+      "cache_tier": "splash",
+      "hits": 162,
+      "misses": 8,
+      "loads": 735,
+      "saves": 0,
+      "evictions": 0,
+      "total_size_bytes": 9292677120,
+      "max_size_bytes": 63993282560,
+      "splash_cache": {"kv_disk_hit_tokens": 23520}
+    }]
+  }
+}"#;
+
 /// Baseline `/status` body, extended from the previous suite's fixture with the
 /// field groups the renderer actually displays. `configured_memory_limit_bytes`
 /// is exactly 42.00 GiB and `weights.released` is `true` with no active
@@ -163,6 +208,20 @@ impl Harness {
 
     pub fn with(body: Option<&str>, sample: SystemSample) -> Self {
         Self::build(body, sample)
+    }
+
+    /// Builds the view through the gateway fallback parser instead of
+    /// `/status`, so render tests can show the `GATEWAY` source label.
+    pub fn gateway(stats: Option<&str>, sample: SystemSample) -> Self {
+        let view = splash_monitor::status::parse_gateway_stats(stats);
+        let mut state = DashboardState::default();
+        let rates = state.update_frame(&view, &sample, NOW);
+        Harness {
+            view,
+            sample,
+            state,
+            rates,
+        }
     }
 
     /// Builds the sample through the public `FixtureProbe` seam, so the suites
@@ -451,6 +510,8 @@ pub fn run_binary(args: &[&str], env: &[(&str, &str)]) -> std::process::Output {
         "SPLASH_HOST",
         "SPLASH_PORT",
         "SPLASH_API_KEY",
+        "SPLASH_GATEWAY_URL",
+        "SPLASH_GATEWAY_API_KEY",
         "SPLASH_CACHE_DIR",
         "NO_COLOR",
         "COLUMNS",

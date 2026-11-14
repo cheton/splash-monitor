@@ -18,6 +18,10 @@ pub struct Options {
     pub json: bool,
     pub fixtures: Option<PathBuf>,
     pub api_key: Option<String>,
+    /// oMLX gateway base URL; when set, a failed `/status` answer falls back
+    /// to `{gateway}/admin/api/stats`. `None` disables the fallback.
+    pub gateway_url: Option<String>,
+    pub gateway_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -57,6 +61,10 @@ Options:\n\
   -i, --interval SECONDS   Refresh interval, default 5 (minimum 1)\n\
   -u, --url BASE_URL       Splash URL, default http://127.0.0.1:18000\n\
       --api-key KEY        Bearer token for a Splash server that requires one\n\
+      --gateway URL        oMLX gateway base URL, fallback when /status fails,\n\
+                           default http://127.0.0.1:8000 when only --gateway-key\n\
+                           or SPLASH_GATEWAY_API_KEY is set\n\
+      --gateway-key KEY    Bearer token for the oMLX gateway (its auth.api_key)\n\
   -l, --log FILE           Append measurements to CSV\n\
       --cache-dir PATH     Optional device-level I/O diagnostics\n\
       --no-sensors         Do not query optional hardware sensors\n\
@@ -73,9 +81,13 @@ Environment (read once at startup):\n\
   SPLASH_HOST                Host only, default 127.0.0.1\n\
   SPLASH_PORT                Port only, default 18000\n\
   SPLASH_API_KEY             Bearer token, same form as --api-key\n\
+  SPLASH_GATEWAY_URL         Full gateway base URL, same form as --gateway\n\
+  SPLASH_GATEWAY_API_KEY     Gateway Bearer token, same form as --gateway-key\n\
   SPLASH_CACHE_DIR           Default path for --cache-dir\n\
   SPLASH_THEME                 Default palette: auto, dark, light\n\
 Priority: --url > SPLASH_URL > SPLASH_HOST / SPLASH_PORT > default.\n\
+Fallback: active when --gateway or SPLASH_GATEWAY_URL is set; --gateway-key\n\
+or SPLASH_GATEWAY_API_KEY alone uses the default gateway http://127.0.0.1:8000.\n\
 \n\
 Press q to quit, or Ctrl-C. No sudo required.\n",
     )
@@ -138,6 +150,8 @@ pub fn parse(
     let mut json = false;
     let mut fixtures: Option<PathBuf> = None;
     let mut api_key = env_value(env, "SPLASH_API_KEY");
+    let mut gateway_url = env_value(env, "SPLASH_GATEWAY_URL");
+    let mut gateway_key = env_value(env, "SPLASH_GATEWAY_API_KEY");
     let mut url_from_cli = None;
 
     let mut args = args.peekable();
@@ -159,6 +173,16 @@ pub fn parse(
             }
             "-l" | "--log" => log_file = Some(PathBuf::from(take_value("--log")?)),
             "--api-key" => api_key = Some(take_value("--api-key")?),
+            "--gateway" => {
+                let value = take_value("--gateway")?;
+                // Strip exactly one trailing slash, like --url.
+                gateway_url = Some(
+                    value
+                        .strip_suffix('/')
+                        .map_or(value.clone(), |s| s.to_string()),
+                );
+            }
+            "--gateway-key" => gateway_key = Some(take_value("--gateway-key")?),
             "--cache-dir" => cache_dir = Some(PathBuf::from(take_value("--cache-dir")?)),
             "--no-sensors" => sensors = false,
             "--once" => once = true,
@@ -181,6 +205,8 @@ pub fn parse(
                     json: false,
                     fixtures: None,
                     api_key: None,
+                    gateway_url: None,
+                    gateway_key: None,
                 })
             }
             _ => {
@@ -210,6 +236,12 @@ pub fn parse(
         None => Mode::Auto,
     };
 
+    // The fallback is on when a gateway URL or key was given. A key alone
+    // uses the oMLX default gateway port.
+    if gateway_url.is_none() && gateway_key.is_some() {
+        gateway_url = Some("http://127.0.0.1:8000".to_string());
+    }
+
     Ok(Options {
         interval,
         base_url,
@@ -223,5 +255,7 @@ pub fn parse(
         json,
         fixtures,
         api_key,
+        gateway_url,
+        gateway_key,
     })
 }

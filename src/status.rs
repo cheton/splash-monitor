@@ -8,6 +8,9 @@ pub const MISSING: &str = "--";
 #[derive(Debug, Clone)]
 pub struct SplashView {
     pub online: bool,
+    /// True when this view came from the oMLX gateway fallback rather than a
+    /// direct Splash `/status` answer. The header labels it "GATEWAY".
+    pub gateway: bool,
     pub metal_current: u64,
     pub metal_peak: u64,
     pub metal_limit: u64,
@@ -142,6 +145,7 @@ pub fn parse_status(body: Option<&str>) -> SplashView {
 
     SplashView {
         online: true,
+        gateway: false,
         metal_current: u64_or(&root, &["memory_actual", "current_bytes"], 0),
         metal_peak: u64_or(&root, &["memory_actual", "peak_bytes"], 0),
         metal_limit: u64_or(
@@ -239,12 +243,131 @@ pub fn parse_status(body: Option<&str>) -> SplashView {
     }
 }
 
+/// Fallback mapping for the oMLX gateway: `GET {gateway}/admin/api/stats`.
+/// That is the payload oMLX's own web console renders, so the counters exist.
+/// Engine-only fields stay missing (`--` or 0): transferred cache bytes, KV
+/// spill, TTFT p95, decode gap, cache persistence and gate, context bounds.
+/// A failed request parses to the offline view, exactly like `/status`.
+pub fn parse_gateway_stats(body: Option<&str>) -> SplashView {
+    let parsed: Option<Value> = body.and_then(|text| serde_json::from_str(text).ok());
+    let root: Value = match parsed {
+        Some(value @ Value::Object(_)) => value,
+        _ => return SplashView::offline(),
+    };
+
+    // The cache entry for a Splash-backed model carries the hit and SSD
+    // counters; when several models are loaded, prefer the Splash one.
+    let cache_model = path(&root, &["runtime_cache", "models"])
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("cache_tier").and_then(Value::as_str) == Some("splash"))
+                .or_else(|| items.first())
+        });
+    // `active_models.models[0]` carries request counts and memory totals.
+    let active_model = path(&root, &["active_models", "models"])
+        .and_then(Value::as_array)
+        .and_then(|items| items.first());
+
+    let model = cache_model.or(active_model).cloned().unwrap_or(Value::Null);
+
+    let cache = model.get("splash_cache").cloned().unwrap_or(Value::Null);
+    let pressure = path(&root, &["active_models", "memory_pressure"]);
+
+    SplashView {
+        online: true,
+        gateway: true,
+        metal_current: opt_u64(&root, &["active_models", "model_memory_used"]).unwrap_or(0),
+        metal_peak: 0,
+        metal_limit: opt_u64(&root, &["active_models", "model_memory_max"]).unwrap_or(0),
+        context_window: 0,
+        resident: 0,
+        spilled_bound: 0,
+        kv_capacity: 0,
+        active: opt_u64(&root, &["active_models", "total_active_requests"]).unwrap_or(0),
+        spill_requests: 0,
+        resident_requests: 0,
+        spilled_pages: 0,
+        spilled_bytes: 0,
+        kv_write_bytes: 0,
+        kv_read_bytes: 0,
+        idle_secs: MISSING.to_string(),
+        released: MISSING.to_string(),
+        model: model
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| MISSING.to_string()),
+        decode_rate: opt_num(&root, &["avg_generation_tps"]),
+        gap_p95: None,
+        prefill_ms: None,
+        phase: {
+            let count = |key: &str| {
+                active_model
+                    .and_then(|m| m.get(key))
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| !items.is_empty())
+            };
+            if count("generating") {
+                "decoding".to_string()
+            } else if count("prefilling") {
+                "prefilling".to_string()
+            } else {
+                "idle".to_string()
+            }
+        },
+        prompt_tokens: 0,
+        prompt_processed: 0,
+        generated_tokens: 0,
+        max_new_tokens: 0,
+        request_id: MISSING.to_string(),
+        disk_present: cache_model.is_some(),
+        cache_used: integer(model.get("total_size_bytes")).unwrap_or(0),
+        cache_capacity: integer(model.get("max_size_bytes")).unwrap_or(0),
+        cache_limit: integer(model.get("max_size_bytes")).unwrap_or(0),
+        cache_volume_free: 0,
+        cache_writes_gated: MISSING.to_string(),
+        cache_persistent: MISSING.to_string(),
+        disk_read_total: None,
+        disk_written_total: None,
+        decode_tokens_total: opt_u64(&root, &["total_completion_tokens"]),
+        scheduler_queued: opt_u64(&root, &["active_models", "total_waiting_requests"]).unwrap_or(0),
+        scheduler_waiting: 0,
+        scheduler_prefill: active_model
+            .and_then(|m| m.get("prefilling"))
+            .and_then(Value::as_array)
+            .map_or(0, |items| items.len() as u64),
+        scheduler_decode: active_model
+            .and_then(|m| m.get("generating"))
+            .and_then(Value::as_array)
+            .map_or(0, |items| items.len() as u64),
+        thermal_state: MISSING.to_string(),
+        cache_hits: integer(model.get("hits")),
+        disk_hit_tokens: integer(cache.get("kv_disk_hit_tokens")),
+        disk_restores: integer(model.get("loads")),
+        // Headroom means the distance to the gateway's hard memory line; with
+        // no pressure block the distance is unknown, not the whole budget.
+        memory_headroom: pressure.and_then(|p| {
+            let hard = integer(p.get("hard_bytes"))?;
+            let current = integer(p.get("current_bytes"))?;
+            Some(hard.saturating_sub(current))
+        }),
+        denied_reservations: None,
+        cache_write_wait: None,
+        cache_write_budget: None,
+        ttft_p95: None,
+        prefill_tps: opt_num(&root, &["avg_prefill_tps"]),
+    }
+}
+
 impl SplashView {
     /// Everything defaults to zero/offline values; the renderer turns those
     /// into `--` for the fields the offline frame must not show.
     pub fn offline() -> Self {
         SplashView {
             online: false,
+            gateway: false,
             metal_current: 0,
             metal_peak: 0,
             metal_limit: 0,
@@ -375,6 +498,24 @@ impl SplashView {
             display.cache_used_gib = MISSING.to_string();
             display.cache_limit_gib = MISSING.to_string();
             display.cache_persistent = MISSING.to_string();
+        }
+        // The gateway never reports these engine fields; a zero would claim a
+        // measurement that never happened.
+        if self.gateway {
+            for value in [
+                &mut display.spill_requests,
+                &mut display.resident_requests,
+                &mut display.spilled_pages,
+                &mut display.spill_gib,
+                &mut display.write_gib,
+                &mut display.read_gib,
+                &mut display.context_window,
+                &mut display.resident,
+                &mut display.spilled_bound,
+                &mut display.kv_capacity,
+            ] {
+                *value = MISSING.to_string();
+            }
         }
         if !self.online {
             for value in [

@@ -46,6 +46,8 @@ The machine that runs the binary needs no Rust toolchain.
 | `-i, --interval SECONDS` | Refresh interval, default 5, minimum 1 |
 | `-u, --url BASE_URL` | Splash base URL, default `http://127.0.0.1:18000` |
 | `--api-key KEY` | Bearer token, when the server was started with `--api-key` or `SPLASH_API_KEY` |
+| `--gateway URL` | oMLX gateway base URL; when `/status` fails, read `{gateway}/admin/api/stats` instead |
+| `--gateway-key KEY` | Gateway Bearer token (`auth.api_key` in `~/.omlx/settings.json`) |
 | `-l, --log FILE` | Append one row per frame to a CSV file |
 | `--cache-dir PATH` | Optional device-level I/O diagnostics for the volume holding `PATH` |
 | `--no-sensors` | Do not query hardware sensors |
@@ -63,12 +65,29 @@ The machine that runs the binary needs no Rust toolchain.
 | `SPLASH_HOST` | Host only, default `127.0.0.1` |
 | `SPLASH_PORT` | Port only, default `18000` |
 | `SPLASH_API_KEY` | Bearer token, same form as `--api-key` |
+| `SPLASH_GATEWAY_URL` | Full gateway base URL, same form as `--gateway` |
+| `SPLASH_GATEWAY_API_KEY` | Gateway Bearer token, same form as `--gateway-key` |
 | `SPLASH_CACHE_DIR` | Default path for `--cache-dir` |
 | `SPLASH_THEME` | Default palette: `auto`, `dark`, `light` |
 
 Precedence: `--url` > `SPLASH_URL` > `SPLASH_HOST` / `SPLASH_PORT` > default `http://127.0.0.1:18000`. `--theme` wins over `SPLASH_THEME`, and `--api-key` wins over `SPLASH_API_KEY`. A server that needs a key answers `401` to `/status`; the monitor then shows `OFFLINE`.
 
 `auto` asks the terminal through `COLORFGBG`: a background index of 7 or 15 selects the light palette, anything else (including no hint at all) stays dark. `--no-color`, `NO_COLOR`, or `TERM=dumb` turn colors off entirely.
+
+## Gateway fallback (oMLX)
+
+oMLX starts the Splash engine with a random per-run key that it never shares,
+so a machine managed by oMLX answers `401` on `/status`. When `--gateway` (or
+`SPLASH_GATEWAY_URL`) is set and `/status` fails, the monitor instead reads
+`GET {gateway}/admin/api/stats` with `--gateway-key` / `SPLASH_GATEWAY_API_KEY`
+— the same payload oMLX's own web console renders. The header then shows
+`GATEWAY`. A key without a URL enables the fallback at the default gateway
+`http://127.0.0.1:8000`.
+
+The gateway counters cover throughput, request counts, cache hits, restores,
+cache disk usage and memory totals. Engine-only fields stay `--` in gateway
+mode: transferred cache bytes, KV spill, TTFT p95, decode gap p95, cache
+persistence and gate, context bounds.
 
 ## Where the numbers come from
 
@@ -104,6 +123,8 @@ Splash reports cache bytes but not its path; the engine keeps the cache as temp 
 ```text
 timestamp,metal_current_GiB,metal_peak_GiB,metal_limit_GiB,pressure,free_percent,swap_used_GiB,swap_in_MiB_s,swap_out_MiB_s,active_requests,kv_spilled_pages,kv_spilled_GiB,weights_released
 ```
+
+Unavailable CSV values are written as `--`, including KV spill pages and bytes in gateway mode. A measured zero remains `0` (or `0.000` GiB).
 
 ## Development
 

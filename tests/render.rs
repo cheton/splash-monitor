@@ -407,3 +407,26 @@ fn offline_empty_sample_and_fixture_agree_on_missing_shape() {
     assert!(filled_text.contains("62.0%"));
     assert!(empty_text.contains("GPU utilization unavailable on this macOS"));
 }
+
+#[test]
+fn gateway_frame_labels_the_source_not_offline() {
+    let harness = common::Harness::gateway(Some(common::GATEWAY_STATS), sample_fixture());
+    let text = harness.visible_text(140, 42);
+    assert!(
+        text.contains("GATEWAY"),
+        "missing source label in full layout"
+    );
+    assert!(!text.contains("OFFLINE"), "gateway frame looked offline");
+    assert!(text.contains("111.4"), "engine avg missing in full layout");
+
+    let harness = common::Harness::gateway(Some(common::GATEWAY_STATS), sample_fixture());
+    let text = harness.visible_text(80, 24);
+    assert!(
+        text.contains("GATEWAY"),
+        "missing source label in compact layout"
+    );
+    assert!(
+        !text.contains("OFFLINE"),
+        "compact gateway frame looked offline"
+    );
+}

@@ -68,11 +68,6 @@ impl CsvLog {
         } else {
             "--".to_string()
         };
-        let spilled_pages = if frame.view.online {
-            frame.view.spilled_pages.to_string()
-        } else {
-            "--".to_string()
-        };
         let fields = [
             timestamp_local(now),
             frame.display.metal_gib.clone(),
@@ -84,7 +79,7 @@ impl CsvLog {
             Frame::rate_text(frame.rates.swap_in_mib),
             Frame::rate_text(frame.rates.swap_out_mib),
             active,
-            spilled_pages,
+            frame.display.spilled_pages.clone(),
             frame.display.spill_gib.clone(),
             frame.view.released.clone(),
         ];

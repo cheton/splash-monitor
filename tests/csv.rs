@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{Harness, TmpDir, BASE_STATUS, FIXTURE_SAMPLE, NOW};
+use common::{Harness, TmpDir, BASE_STATUS, FIXTURE_SAMPLE, GATEWAY_STATS, NOW};
 use splash_monitor::csv::{timestamp_local, CsvLog, HEADER};
 
 #[test]
@@ -64,6 +64,31 @@ fn offline_rows_record_missing_values_not_zeros() {
     assert_eq!(fields.len(), 13);
     for index in [1, 2, 3, 6, 7, 8, 9, 10, 12] {
         assert_eq!(fields[index], "--", "column {index} of {}", lines[1]);
+    }
+}
+
+#[test]
+fn gateway_rows_preserve_missing_spill_values_and_engine_rows_preserve_counts() {
+    let dir = TmpDir::new("csv-gateway");
+    let path = dir.path().join("spill.csv");
+    let log = CsvLog::open(&path).expect("open log");
+    let gateway = Harness::gateway(Some(GATEWAY_STATS), Default::default());
+    let engine = Harness::with(Some(BASE_STATUS), Default::default());
+    let zero_spill = Harness::with(
+        Some(r#"{"kv_spill":{"pages":{"spilled":0,"spilled_bytes":0}}}"#),
+        Default::default(),
+    );
+    for harness in [&gateway, &engine, &zero_spill] {
+        log.write_frame(&harness.frame(false), NOW).expect("row");
+    }
+
+    let text = std::fs::read_to_string(&path).expect("read log");
+    let mut rows = text.lines().skip(1);
+    for (pages, gib) in [("--", "--"), ("1048576", "4.005"), ("0", "0.000")] {
+        let row = rows.next().expect("spill row");
+        let fields: Vec<&str> = row.split(',').collect();
+        assert_eq!(fields[10], pages, "kv_spilled_pages in {row}");
+        assert_eq!(fields[11], gib, "kv_spilled_GiB in {row}");
     }
 }
 
