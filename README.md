@@ -124,6 +124,8 @@ Splash reports cache bytes but not its path; the engine keeps the cache as temp 
 timestamp,metal_current_GiB,metal_peak_GiB,metal_limit_GiB,pressure,free_percent,swap_used_GiB,swap_in_MiB_s,swap_out_MiB_s,active_requests,kv_spilled_pages,kv_spilled_GiB,weights_released
 ```
 
+Unavailable CSV values are written as `--`, including KV spill pages and bytes in gateway mode. A measured zero remains `0` (or `0.000` GiB).
+
 ## Development
 
 ```text
