@@ -295,16 +295,24 @@ pub struct TestServer {
     port: u16,
     body: Arc<Mutex<String>>,
     paths: Arc<Mutex<Vec<String>>>,
+    authorization: Arc<Mutex<Vec<Option<String>>>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl TestServer {
     pub fn start(body: &str) -> Self {
+        Self::start_with_auth(body, None)
+    }
+
+    /// When a key is required, reject requests without the matching Bearer header.
+    pub fn start_with_auth(body: &str, api_key: Option<&str>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
         let port = listener.local_addr().expect("local addr").port();
         let body = Arc::new(Mutex::new(body.to_string()));
         let paths = Arc::new(Mutex::new(Vec::new()));
+        let authorization = Arc::new(Mutex::new(Vec::new()));
+        let expected_authorization = api_key.map(|key| format!("Bearer {key}"));
         let stop = Arc::new(AtomicBool::new(false));
 
         // A blocking accept answers a request as soon as the kernel queued it.
@@ -313,11 +321,18 @@ impl TestServer {
         // look offline. `Drop` connects once to release the blocked accept.
         let thread_body = Arc::clone(&body);
         let thread_paths = Arc::clone(&paths);
+        let thread_authorization = Arc::clone(&authorization);
         let thread_stop = Arc::clone(&stop);
         let thread = std::thread::spawn(move || {
             while !thread_stop.load(Ordering::Relaxed) {
                 match listener.accept() {
-                    Ok((stream, _)) => serve(stream, &thread_body, &thread_paths),
+                    Ok((stream, _)) => serve(
+                        stream,
+                        &thread_body,
+                        &thread_paths,
+                        &thread_authorization,
+                        expected_authorization.as_deref(),
+                    ),
                     Err(_) => break,
                 }
             }
@@ -328,6 +343,7 @@ impl TestServer {
             port,
             body,
             paths,
+            authorization,
             stop,
             thread: Some(thread),
         }
@@ -341,6 +357,13 @@ impl TestServer {
         self.paths.lock().expect("paths lock").clone()
     }
 
+    pub fn authorization_headers(&self) -> Vec<Option<String>> {
+        self.authorization
+            .lock()
+            .expect("authorization lock")
+            .clone()
+    }
+
     pub fn wait_for_requests(&self, count: usize) -> bool {
         for _ in 0..200 {
             if self.paths.lock().expect("paths lock").len() >= count {
@@ -352,7 +375,13 @@ impl TestServer {
     }
 }
 
-fn serve(mut stream: TcpStream, body: &Arc<Mutex<String>>, paths: &Arc<Mutex<Vec<String>>>) {
+fn serve(
+    mut stream: TcpStream,
+    body: &Arc<Mutex<String>>,
+    paths: &Arc<Mutex<Vec<String>>>,
+    authorization: &Arc<Mutex<Vec<Option<String>>>>,
+    expected_authorization: Option<&str>,
+) {
     let mut reader = BufReader::new(stream.try_clone().expect("clone"));
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() || line.is_empty() {
@@ -367,10 +396,34 @@ fn serve(mut stream: TcpStream, body: &Arc<Mutex<String>>, paths: &Arc<Mutex<Vec
         .next()
         .unwrap_or("/")
         .to_string();
+    let mut auth_header = None;
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("authorization") {
+                auth_header = Some(value.trim().to_string());
+            }
+        }
+    }
+    let authorized = expected_authorization
+        .map(|expected| auth_header.as_deref() == Some(expected))
+        .unwrap_or(true);
+    authorization
+        .lock()
+        .expect("authorization lock")
+        .push(auth_header);
     paths.lock().expect("paths lock").push(path);
     let payload = body.lock().expect("body lock").clone();
+    let status = if authorized {
+        "200 OK"
+    } else {
+        "401 Unauthorized"
+    };
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         payload.len(),
         payload
     );
@@ -397,6 +450,7 @@ pub fn run_binary(args: &[&str], env: &[(&str, &str)]) -> std::process::Output {
         "SPLASH_URL",
         "SPLASH_HOST",
         "SPLASH_PORT",
+        "SPLASH_API_KEY",
         "SPLASH_CACHE_DIR",
         "NO_COLOR",
         "COLUMNS",

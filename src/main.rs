@@ -145,7 +145,11 @@ fn collect_frame(
     i64,
 ) {
     let now = now_epoch();
-    let body = http::fetch_status(&dashboard.agent, &options.base_url);
+    let body = http::fetch_status(
+        &dashboard.agent,
+        &options.base_url,
+        options.api_key.as_deref(),
+    );
     let view = status::parse_status(body.as_deref());
     let sample = probe.sample();
     let rates = dashboard.state.update_frame(&view, &sample, now);
@@ -238,14 +242,18 @@ fn run_json(options: &cli::Options) {
     let mut dashboard = state::DashboardState::default();
 
     let now = now_epoch();
-    let view = status::parse_status(http::fetch_status(&agent, &options.base_url).as_deref());
+    let view = status::parse_status(
+        http::fetch_status(&agent, &options.base_url, options.api_key.as_deref()).as_deref(),
+    );
     let first = probe.sample();
     dashboard.update_frame(&view, &first, now);
 
     // CPU ratios and GPU watts are differences between two samples.
     std::thread::sleep(Duration::from_secs(1));
     let now = now_epoch();
-    let view = status::parse_status(http::fetch_status(&agent, &options.base_url).as_deref());
+    let view = status::parse_status(
+        http::fetch_status(&agent, &options.base_url, options.api_key.as_deref()).as_deref(),
+    );
     let sample = probe.sample();
     dashboard.update_frame(&view, &sample, now);
 

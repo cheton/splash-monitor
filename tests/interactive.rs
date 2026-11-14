@@ -133,6 +133,7 @@ fn spawn_on_pty(slave: libc::c_int, fixture: &str, url: &str) -> std::process::C
         .env_remove("LINES")
         .env_remove("TERM")
         .env_remove("NO_COLOR")
+        .env_remove("SPLASH_API_KEY")
         .stdin(Stdio::from(unsafe { std::fs::File::from_raw_fd(slave_in) }))
         .stdout(Stdio::from(unsafe {
             std::fs::File::from_raw_fd(slave_out)
