@@ -115,7 +115,10 @@ fn volume_rates_and_session_totals_track_observed_deltas() {
 
     let first = volume_sample("disk0", Some(10 * MIB), Some(20 * MIB));
     let rates = state.update_frame(&view, &first, NOW);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(0));
     assert_eq!(state.volume_session_write_bytes, Some(0));
     assert!(state.volume_read_history.is_empty());
@@ -136,18 +139,29 @@ fn volume_rates_and_session_totals_track_observed_deltas() {
         (Some(0.0), Some(0.0))
     );
     assert_eq!(
-        state.volume_read_history.iter().copied().collect::<Vec<_>>(),
+        state
+            .volume_read_history
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![1.5, 0.0]
     );
     assert_eq!(
-        state.volume_write_history.iter().copied().collect::<Vec<_>>(),
+        state
+            .volume_write_history
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![2.5, 0.0]
     );
 
     // A monotonic counter delta is still observed when no rate can be timed.
     let same_time = volume_sample("disk0", Some(14 * MIB), Some(26 * MIB));
     let rates = state.update_frame(&view, &same_time, NOW + 3);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(4 * MIB));
     assert_eq!(state.volume_session_write_bytes, Some(6 * MIB));
     assert_eq!(state.volume_read_history.len(), 2);
@@ -171,27 +185,57 @@ fn volume_gaps_clear_baselines_without_erasing_totals_or_history() {
     state.update_frame(&view, &volume_sample("disk0", Some(12), Some(23)), NOW + 1);
 
     let rates = state.update_frame(&view, &SystemSample::default(), NOW + 2);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(2));
     assert_eq!(state.volume_session_write_bytes, Some(3));
-    let rates = state.update_frame(&view, &volume_sample("disk0", Some(100), Some(200)), NOW + 3);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
-    state.update_frame(&view, &volume_sample("disk0", Some(101), Some(202)), NOW + 4);
+    let rates = state.update_frame(
+        &view,
+        &volume_sample("disk0", Some(100), Some(200)),
+        NOW + 3,
+    );
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
+    state.update_frame(
+        &view,
+        &volume_sample("disk0", Some(101), Some(202)),
+        NOW + 4,
+    );
     assert_eq!(state.volume_session_read_bytes, Some(3));
     assert_eq!(state.volume_session_write_bytes, Some(5));
 
     let rates = state.update_frame(&view, &volume_sample("disk0", None, Some(300)), NOW + 5);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
-    let rates = state.update_frame(&view, &volume_sample("disk0", Some(500), Some(600)), NOW + 6);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
+    let rates = state.update_frame(
+        &view,
+        &volume_sample("disk0", Some(500), Some(600)),
+        NOW + 6,
+    );
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     let rates = state.update_frame(&view, &volume_sample("disk0", Some(501), None), NOW + 7);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     let rates = state.update_frame(
         &view,
         &volume_sample("disk0", Some(1000), Some(1000)),
         NOW + 8,
     );
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(3));
     assert_eq!(state.volume_session_write_bytes, Some(5));
     assert_eq!(state.volume_read_history.len(), 2);
@@ -216,7 +260,10 @@ fn volume_counter_rollback_rebaselines_both_counters() {
     state.update_frame(&view, &volume_sample("disk0", Some(15), Some(25)), NOW + 1);
 
     let rates = state.update_frame(&view, &volume_sample("disk0", Some(14), Some(28)), NOW + 2);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(5));
     assert_eq!(state.volume_session_write_bytes, Some(5));
     assert_eq!(state.volume_read_history.len(), 1);
@@ -226,7 +273,10 @@ fn volume_counter_rollback_rebaselines_both_counters() {
     assert_eq!(state.volume_session_read_bytes, Some(7));
     assert_eq!(state.volume_session_write_bytes, Some(7));
     let rates = state.update_frame(&view, &volume_sample("disk0", Some(20), Some(29)), NOW + 4);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(7));
     assert_eq!(state.volume_session_write_bytes, Some(7));
 
@@ -245,14 +295,20 @@ fn volume_device_change_resets_session_even_after_a_gap_or_with_missing_counters
     state.update_frame(&view, &volume_sample("disk0", Some(15), Some(25)), NOW + 1);
 
     let rates = state.update_frame(&view, &volume_sample("disk1", None, Some(30)), NOW + 2);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, None);
     assert_eq!(state.volume_session_write_bytes, None);
     assert!(state.volume_read_history.is_empty());
     assert!(state.volume_write_history.is_empty());
 
     let rates = state.update_frame(&view, &volume_sample("disk1", Some(40), Some(50)), NOW + 3);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(0));
     assert_eq!(state.volume_session_write_bytes, Some(0));
     state.update_frame(&view, &volume_sample("disk1", Some(42), Some(53)), NOW + 4);
@@ -263,7 +319,10 @@ fn volume_device_change_resets_session_even_after_a_gap_or_with_missing_counters
     assert_eq!(state.volume_write_history.len(), 1);
 
     let rates = state.update_frame(&view, &volume_sample("disk0", Some(60), Some(70)), NOW + 6);
-    assert_eq!((rates.volume_read_mib, rates.volume_write_mib), (None, None));
+    assert_eq!(
+        (rates.volume_read_mib, rates.volume_write_mib),
+        (None, None)
+    );
     assert_eq!(state.volume_session_read_bytes, Some(0));
     assert_eq!(state.volume_session_write_bytes, Some(0));
     assert!(state.volume_read_history.is_empty());

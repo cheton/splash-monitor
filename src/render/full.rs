@@ -130,7 +130,9 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     grid.at(x + w - 12, 2, Some(theme.caution), "q: quit", 9);
 
     render_cache(grid, frame, theme, x, top, lw, graphw, top_h);
-    render_inference(grid, frame, theme, x, middle_y, lw, graphw, gheight, middle_h);
+    render_inference(
+        grid, frame, theme, x, middle_y, lw, graphw, gheight, middle_h,
+    );
     render_memory_config(grid, frame, theme, x, bottom_y, lw);
     render_hardware(grid, frame, theme, rx, top, rw, graphw2, top_h);
     render_local_memory(grid, frame, theme, rx, middle_y, rw, middle_h);
@@ -196,13 +198,7 @@ fn render_inference(
     );
     let gap_text = format!("Gap p95 {} ms | Thermal ", frame.display.gap_p95);
     let gap_width = gap_text.chars().count().min(lw - 4);
-    grid.at(
-        x + 2,
-        top + 4,
-        Some(theme.muted),
-        &gap_text,
-        gap_width,
-    );
+    grid.at(x + 2, top + 4, Some(theme.muted), &gap_text, gap_width);
     grid.at(
         x + 2 + gap_width,
         top + 4,
@@ -866,14 +862,7 @@ fn render_local_memory(
     }
 }
 
-fn render_disk_io(
-    grid: &mut Grid,
-    frame: &Frame<'_>,
-    theme: &Theme,
-    x: usize,
-    y: usize,
-    w: usize,
-) {
+fn render_disk_io(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme, x: usize, y: usize, w: usize) {
     draw_box(grid, theme, x, y, w, 6, "[LOCAL] DISK I/O");
     if let Some(volume) = &frame.sample.volume {
         grid.at(
@@ -948,20 +937,8 @@ fn render_disk_io(
             w - 4,
         );
     } else {
-        grid.at(
-            x + 2,
-            y + 1,
-            Some(theme.muted),
-            "Device unavailable",
-            w - 4,
-        );
-        grid.at(
-            x + 2,
-            y + 2,
-            Some(theme.muted),
-            "R -- / W -- MiB/s",
-            w - 4,
-        );
+        grid.at(x + 2, y + 1, Some(theme.muted), "Device unavailable", w - 4);
+        grid.at(x + 2, y + 2, Some(theme.muted), "R -- / W -- MiB/s", w - 4);
     }
 }
 

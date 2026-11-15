@@ -126,7 +126,11 @@ fn disk_guard() {
             "true",
             "false",
         ),
-        (r#"{"disk":{"persistent":null,"writes_gated":null}}"#, "--", "--"),
+        (
+            r#"{"disk":{"persistent":null,"writes_gated":null}}"#,
+            "--",
+            "--",
+        ),
         (r#"{"disk":{}}"#, "--", "--"),
     ] {
         let view = parse_status(Some(body));

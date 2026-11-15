@@ -194,7 +194,10 @@ fn interactive_run_enters_the_alternate_screen_and_restores_on_quit() {
         "Device disk3 (all processes)",
         "Read -- MiB/s",
     ] {
-        assert!(screen.contains(expected), "missing {expected:?} in first frame:\n{screen}");
+        assert!(
+            screen.contains(expected),
+            "missing {expected:?} in first frame:\n{screen}"
+        );
     }
     assert!(server.wait_for_requests(1), "the run fetched /status");
 }

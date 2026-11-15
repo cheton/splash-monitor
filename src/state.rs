@@ -165,9 +165,7 @@ impl DashboardState {
         self.volume_session_write_bytes.get_or_insert(0);
         let elapsed = self.prev_volume_at.map(|before| now - before).unwrap_or(0);
         let rates = match (self.prev_volume_read, self.prev_volume_write) {
-            (Some(prev_read), Some(prev_write))
-                if read >= prev_read && written >= prev_write =>
-            {
+            (Some(prev_read), Some(prev_write)) if read >= prev_read && written >= prev_write => {
                 // Totals need consecutive monotonic counters, but not a
                 // positive elapsed time; the latter is only needed for rates.
                 let read_delta = read - prev_read;

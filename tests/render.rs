@@ -114,9 +114,7 @@ fn assert_rectangle(
     height: usize,
     title: &str,
 ) {
-    let slice = |y: usize| -> String {
-        rows[y - 1].chars().skip(x - 1).take(width).collect()
-    };
+    let slice = |y: usize| -> String { rows[y - 1].chars().skip(x - 1).take(width).collect() };
     let upper = slice(top);
     assert_eq!(upper.chars().count(), width, "short top border: {upper}");
     assert!(
@@ -180,7 +178,10 @@ fn source_panels(rows: &[String], cols: usize, height: usize) -> Panels {
         splash.push((MEMORY, panel(rows, x, left_width, MEMORY)));
         splash.push((CACHE, panel(rows, x, left_width, CACHE)));
         local.push((HARDWARE, panel(rows, right_x, right_width, HARDWARE)));
-        local.push((LOCAL_MEMORY, panel(rows, right_x, right_width, LOCAL_MEMORY)));
+        local.push((
+            LOCAL_MEMORY,
+            panel(rows, right_x, right_width, LOCAL_MEMORY),
+        ));
         local.push((DISK_IO, panel(rows, right_x, right_width, DISK_IO)));
     } else if cols >= 66 {
         let left_width = (width - 2) / 2;
@@ -315,7 +316,10 @@ fn source_ownership_survives_size_boundaries_and_no_color() {
                 assert!(panels.splash(CACHE).contains("KV Spill 278"));
                 assert!(panels.splash(MEMORY).contains("KV cap 139264"));
                 let disk = panels.local(DISK_IO);
-                assert!(disk.contains("disk3") && disk.contains("all processes"), "{disk}");
+                assert!(
+                    disk.contains("disk3") && disk.contains("all processes"),
+                    "{disk}"
+                );
             } else {
                 assert!(!rows.join("\n").contains(DISK_IO), "{cols}x{height}");
                 if cols >= 66 {
@@ -342,7 +346,10 @@ fn full_layout_keeps_each_metric_group_in_its_source_panel() {
         let rows = harness.visible_rows(cols, height);
         let panels = source_panels(&rows, cols, height);
         let header = panel(&rows, 2, cols - 2, "SPLASH MONITOR");
-        assert!(header.contains("STANDBY") && header.contains("IQ3_XXS"), "{header}");
+        assert!(
+            header.contains("STANDBY") && header.contains("IQ3_XXS"),
+            "{header}"
+        );
         for expected in [
             "Decode",
             "Prefill",
@@ -356,7 +363,11 @@ fn full_layout_keeps_each_metric_group_in_its_source_panel() {
             "denied 3751",
             "TTFT p95",
         ] {
-            assert!(panels.splash(INFERENCE).contains(expected), "{expected} at {cols}x{height}:\n{}", panels.splash(INFERENCE));
+            assert!(
+                panels.splash(INFERENCE).contains(expected),
+                "{expected} at {cols}x{height}:\n{}",
+                panels.splash(INFERENCE)
+            );
         }
         for expected in [
             "Read",
@@ -368,11 +379,26 @@ fn full_layout_keeps_each_metric_group_in_its_source_panel() {
             "Pending writes 2",
             "hit tokens 125568",
         ] {
-            assert!(panels.splash(CACHE).contains(expected), "{expected} at {cols}x{height}:\n{}", panels.splash(CACHE));
+            assert!(
+                panels.splash(CACHE).contains(expected),
+                "{expected} at {cols}x{height}:\n{}",
+                panels.splash(CACHE)
+            );
         }
         let hardware = panels.local(HARDWARE);
-        for expected in ["GPU", "CPU", "62.0%", "14.8%", "58.4°C", "79.0°C", "GPU power 12.7 W"] {
-            assert!(hardware.contains(expected), "{expected} at {cols}x{height}:\n{hardware}");
+        for expected in [
+            "GPU",
+            "CPU",
+            "62.0%",
+            "14.8%",
+            "58.4°C",
+            "79.0°C",
+            "GPU power 12.7 W",
+        ] {
+            assert!(
+                hardware.contains(expected),
+                "{expected} at {cols}x{height}:\n{hardware}"
+            );
         }
         let memory = panels.local(LOCAL_MEMORY);
         for expected in [
@@ -383,11 +409,21 @@ fn full_layout_keeps_each_metric_group_in_its_source_panel() {
             "OUT -- MiB/s",
             "Compressed history (GiB, auto)",
         ] {
-            assert!(memory.contains(expected), "{expected} at {cols}x{height}:\n{memory}");
+            assert!(
+                memory.contains(expected),
+                "{expected} at {cols}x{height}:\n{memory}"
+            );
         }
         let disk = panels.local(DISK_IO);
-        for expected in ["Device disk3 (all processes)", "Read -- MiB/s", "Write -- MiB/s"] {
-            assert!(disk.contains(expected), "{expected} at {cols}x{height}:\n{disk}");
+        for expected in [
+            "Device disk3 (all processes)",
+            "Read -- MiB/s",
+            "Write -- MiB/s",
+        ] {
+            assert!(
+                disk.contains(expected),
+                "{expected} at {cols}x{height}:\n{disk}"
+            );
         }
         for expected in [
             "Metal 41.02/42.00 GiB",
@@ -397,7 +433,11 @@ fn full_layout_keeps_each_metric_group_in_its_source_panel() {
             "Cache quota 32.00 GiB",
             "KV cap 139264",
         ] {
-            assert!(panels.splash(MEMORY).contains(expected), "{expected} at {cols}x{height}:\n{}", panels.splash(MEMORY));
+            assert!(
+                panels.splash(MEMORY).contains(expected),
+                "{expected} at {cols}x{height}:\n{}",
+                panels.splash(MEMORY)
+            );
         }
     }
 }
@@ -414,11 +454,23 @@ fn swap_and_device_rates_keep_their_units_and_sources() {
         let panels = source_panels(&rows, cols, height);
         let memory = panels.local(LOCAL_MEMORY);
         let rates = memory.lines().nth(4).unwrap();
-        assert!(rates.contains("IN 12345.67 MiB/s") && rates.contains("OUT 98.76 MiB/s"), "{memory}");
-        assert!(!memory.contains("12.34") && !memory.contains("56.78"), "{memory}");
+        assert!(
+            rates.contains("IN 12345.67 MiB/s") && rates.contains("OUT 98.76 MiB/s"),
+            "{memory}"
+        );
+        assert!(
+            !memory.contains("12.34") && !memory.contains("56.78"),
+            "{memory}"
+        );
         let disk = panels.local(DISK_IO);
-        assert!(disk.contains("Read 12.34 MiB/s") && disk.contains("Write 56.78 MiB/s"), "{disk}");
-        assert!(!disk.contains("12345.67") && !disk.contains("98.76"), "{disk}");
+        assert!(
+            disk.contains("Read 12.34 MiB/s") && disk.contains("Write 56.78 MiB/s"),
+            "{disk}"
+        );
+        assert!(
+            !disk.contains("12345.67") && !disk.contains("98.76"),
+            "{disk}"
+        );
     }
 }
 
@@ -463,7 +515,10 @@ fn memory_panels_keep_each_metric_on_its_own_row() {
             (3, "Context 262144 | RAM bound 139257"),
             (4, "Cache quota 32.00 GiB | KV cap 139264"),
         ] {
-            assert!(server_rows[index].contains(expected), "{expected} at {cols}x{height}:\n{server}");
+            assert!(
+                server_rows[index].contains(expected),
+                "{expected} at {cols}x{height}:\n{server}"
+            );
         }
         let memory = panels.local(LOCAL_MEMORY);
         let memory_rows: Vec<&str> = memory.lines().collect();
@@ -474,9 +529,15 @@ fn memory_panels_keep_each_metric_on_its_own_row() {
             (3, "Swap used 6.78 GiB"),
             (5, "Compressed history (GiB, auto)"),
         ] {
-            assert!(memory_rows[index].contains(expected), "{expected} at {cols}x{height}:\n{memory}");
+            assert!(
+                memory_rows[index].contains(expected),
+                "{expected} at {cols}x{height}:\n{memory}"
+            );
         }
-        assert!(memory_rows[4].contains("IN -- MiB/s") && memory_rows[4].contains("OUT -- MiB/s"), "{memory}");
+        assert!(
+            memory_rows[4].contains("IN -- MiB/s") && memory_rows[4].contains("OUT -- MiB/s"),
+            "{memory}"
+        );
     }
 }
 
@@ -512,7 +573,10 @@ fn full_layout_has_independent_source_aligned_rectangles() {
         assert_eq!(bottom_y + 5, height);
         for row in &rows[3..] {
             let gap: String = row.chars().skip(x + left_width - 1).take(2).collect();
-            assert_eq!(gap, "  ", "content crossed the column gap at {cols}x{height}: {row}");
+            assert_eq!(
+                gap, "  ",
+                "content crossed the column gap at {cols}x{height}: {row}"
+            );
         }
     }
 }
@@ -530,7 +594,9 @@ fn minimum_full_cache_retains_separate_read_and_write_charts() {
     for (line, label) in [(lines[5], "R"), (lines[7], "W")] {
         assert!(
             line.trim_start_matches('│').trim_start().starts_with(label)
-                && line.chars().any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)),
+                && line
+                    .chars()
+                    .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)),
             "missing {label} chart: {cache}"
         );
     }
@@ -547,8 +613,16 @@ fn minimum_full_inference_keeps_history_and_summary() {
     let rows = harness.visible_rows(100, 30);
     let panels = source_panels(&rows, 100, 30);
     let inference = panels.splash(INFERENCE);
-    assert!(inference.chars().any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)), "{inference}");
-    assert!(inference.contains("Engine avg") && inference.contains("TTFT p95"), "{inference}");
+    assert!(
+        inference
+            .chars()
+            .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)),
+        "{inference}"
+    );
+    assert!(
+        inference.contains("Engine avg") && inference.contains("TTFT p95"),
+        "{inference}"
+    );
 }
 
 #[test]
@@ -559,7 +633,10 @@ fn either_full_mode_dimension_below_threshold_selects_compact() {
         let text = rows.join("\n");
         let panels = source_panels(&rows, cols, height);
         assert!(panels.splash(STATUS).contains("ONLINE"), "{cols}x{height}");
-        assert!(panels.local(LOCAL_MEMORY).contains("Swap history"), "{cols}x{height}");
+        assert!(
+            panels.local(LOCAL_MEMORY).contains("Swap history"),
+            "{cols}x{height}"
+        );
         for title in [INFERENCE, CACHE, MEMORY, DISK_IO] {
             assert!(!text.contains(title), "{title} appeared at {cols}x{height}");
         }
@@ -573,10 +650,20 @@ fn compact_height_profiles_prioritize_thermal_and_retain_narrow_values() {
         let rows = harness.visible_rows(cols, height);
         let panels = source_panels(&rows, cols, height);
         let status = panels.splash(STATUS);
-        assert!(status.contains("ONLINE") && status.contains("IQ3_XXS"), "{status}");
-        assert!(status.contains("Thermal critical"), "{cols}x{height}:\n{status}");
+        assert!(
+            status.contains("ONLINE") && status.contains("IQ3_XXS"),
+            "{status}"
+        );
+        assert!(
+            status.contains("Thermal critical"),
+            "{cols}x{height}:\n{status}"
+        );
         assert_eq!(status.contains("Weights"), height >= 20, "{cols}x{height}");
-        assert_eq!(status.contains("idle 600s"), height >= 24, "{cols}x{height}");
+        assert_eq!(
+            status.contains("idle 600s"),
+            height >= 24,
+            "{cols}x{height}"
+        );
         let hardware = panels.local(HARDWARE);
         assert_eq!(
             hardware.contains("System-wide sensors"),
@@ -589,18 +676,32 @@ fn compact_height_profiles_prioritize_thermal_and_retain_narrow_values() {
             "{cols}x{height}:\n{hardware}"
         );
         let memory = panels.local(LOCAL_MEMORY);
-        assert_eq!(memory.contains("Swap history"), height >= 16, "{cols}x{height}");
-        assert!(memory.contains("WARNING") && memory.contains("Swap 6.78 GiB"), "{memory}");
+        assert_eq!(
+            memory.contains("Swap history"),
+            height >= 16,
+            "{cols}x{height}"
+        );
+        assert!(
+            memory.contains("WARNING") && memory.contains("Swap 6.78 GiB"),
+            "{memory}"
+        );
         assert!(memory.contains("OUT -- MiB/s"), "{memory}");
         if height >= 15 {
-            let free = memory.lines().find(|line| line.contains("Free index")).unwrap();
+            let free = memory
+                .lines()
+                .find(|line| line.contains("Free index"))
+                .unwrap();
             assert!(
                 free.contains("Free index 30%") && free.contains("IN -- MiB/s"),
                 "free index and IN rate overlapped at {cols}x{height}: {free}"
             );
         }
         for gauge in ["Compressed 3.00 GiB", "Wired 5.00 GiB"] {
-            assert_eq!(memory.contains(gauge), height >= 24, "{cols}x{height}:\n{memory}");
+            assert_eq!(
+                memory.contains(gauge),
+                height >= 24,
+                "{cols}x{height}:\n{memory}"
+            );
         }
     }
     for height in 12..=15 {
@@ -610,12 +711,24 @@ fn compact_height_profiles_prioritize_thermal_and_retain_narrow_values() {
         assert!(hardware.contains("GPU 62.0%"), "64x{height}:\n{hardware}");
         assert_eq!(hardware.contains("CPU 14.8%"), height >= 14, "64x{height}");
         let memory = panels.local(LOCAL_MEMORY);
-        assert!(memory.contains("WARNING") && memory.contains("Swap 6.78 GiB"), "{memory}");
+        assert!(
+            memory.contains("WARNING") && memory.contains("Swap 6.78 GiB"),
+            "{memory}"
+        );
         assert!(memory.contains("OUT -- MiB/s"), "{memory}");
-        assert!(!memory.contains("Compressed") && !memory.contains("Wired"), "{memory}");
+        assert!(
+            !memory.contains("Compressed") && !memory.contains("Wired"),
+            "{memory}"
+        );
         if height >= 15 {
-            let free = memory.lines().find(|line| line.contains("Free index")).unwrap();
-            assert!(free.contains("Free index 30%") && free.contains("IN -- MiB/s"), "{free}");
+            let free = memory
+                .lines()
+                .find(|line| line.contains("Free index"))
+                .unwrap();
+            assert!(
+                free.contains("Free index 30%") && free.contains("IN -- MiB/s"),
+                "{free}"
+            );
         }
         assert_eq!(
             panels.splash(ACTIVITY).contains("41.02/42.00 GiB"),
@@ -639,7 +752,10 @@ fn expanded_compact_splash_details_remain_visible() {
         "Spill 1048576 pages",
         "RAM bound 139257",
     ] {
-        assert!(activity.contains(expected), "{expected} missing:\n{activity}");
+        assert!(
+            activity.contains(expected),
+            "{expected} missing:\n{activity}"
+        );
     }
     let spill = panels.splash(SPILL);
     for expected in [
@@ -654,11 +770,20 @@ fn expanded_compact_splash_details_remain_visible() {
     }
     let memory = panels.local(LOCAL_MEMORY);
     assert!(memory.contains("Swap history"), "{memory}");
-    assert!(memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"), "{memory}");
+    assert!(
+        memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"),
+        "{memory}"
+    );
     assert!(!memory.contains("Swap amount is historical"), "{memory}");
     let text = rows.join("\n");
-    assert!(text.contains("Swap used can reflect earlier activity."), "{text}");
-    assert!(!text.contains("Pressure + swap OUT trend matter more"), "{text}");
+    assert!(
+        text.contains("Swap used can reflect earlier activity."),
+        "{text}"
+    );
+    assert!(
+        !text.contains("Pressure + swap OUT trend matter more"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -670,7 +795,10 @@ fn unavailable_cache_does_not_hide_independent_splash_kv_metrics() {
     let rows = harness.visible_rows(100, 30);
     let panels = source_panels(&rows, 100, 30);
     let cache = panels.splash(CACHE);
-    assert!(cache.contains("Splash cache metrics unavailable"), "{cache}");
+    assert!(
+        cache.contains("Splash cache metrics unavailable"),
+        "{cache}"
+    );
     assert!(cache.contains("Hits 342"), "{cache}");
     assert!(cache.contains("KV Spill 278"), "{cache}");
     assert!(cache.contains("Pending writes --"), "{cache}");
@@ -687,7 +815,10 @@ fn normal_fixture_pressure_remains_local() {
             let panels = source_panels(&rows, cols, height);
             assert!(panels.local(LOCAL_MEMORY).contains("NORMAL"));
             for (title, text) in &panels.splash {
-                assert!(!text.contains("NORMAL"), "local pressure leaked into {title}");
+                assert!(
+                    !text.contains("NORMAL"),
+                    "local pressure leaked into {title}"
+                );
             }
         }
     }
@@ -765,7 +896,10 @@ fn core_table_falls_back_to_a_summary_row_when_it_cannot_fit() {
     let panels = source_panels(&rows, 100, 30);
     let hardware = panels.local(HARDWARE);
     for core in 0..99 {
-        assert!(!hardware.contains(&format!("C{core} ")), "truncated table: {hardware}");
+        assert!(
+            !hardware.contains(&format!("C{core} ")),
+            "truncated table: {hardware}"
+        );
     }
     assert!(
         hardware.contains("Cores 52–87°C  avg 78°C (14 sensors)"),
@@ -838,16 +972,28 @@ fn unresolved_device_probe_is_labelled() {
     let hardware = panels.local(HARDWARE);
     let memory = panels.local(LOCAL_MEMORY);
     let disk = panels.local(DISK_IO);
-    assert!(hardware.contains("GPU utilization unavailable on this macOS"), "{hardware}");
+    assert!(
+        hardware.contains("GPU utilization unavailable on this macOS"),
+        "{hardware}"
+    );
     assert!(disk.contains("Device I/O unresolved"), "{disk}");
     assert!(disk.contains("Path /var/folders/tmp"), "{disk}");
-    assert!(!disk.contains("all processes") && !disk.contains("disk3"), "{disk}");
+    assert!(
+        !disk.contains("all processes") && !disk.contains("disk3"),
+        "{disk}"
+    );
     for text in [hardware, memory, panels.splash(CACHE)] {
-        assert!(!text.contains("Device I/O unresolved") && !text.contains("/var/folders/tmp"), "{text}");
+        assert!(
+            !text.contains("Device I/O unresolved") && !text.contains("/var/folders/tmp"),
+            "{text}"
+        );
     }
     for (cols, height) in [(86, 27), (66, 20), (64, 15), (36, 10)] {
         let text = harness.visible_text(cols, height);
-        assert!(!text.contains("Device I/O unresolved") && !text.contains("/var/folders/tmp"), "{text}");
+        assert!(
+            !text.contains("Device I/O unresolved") && !text.contains("/var/folders/tmp"),
+            "{text}"
+        );
         assert!(!text.contains(DISK_IO), "{text}");
     }
 
@@ -862,8 +1008,14 @@ fn unresolved_device_probe_is_labelled() {
     let path_row = disk.lines().find(|line| line.contains("Path ")).unwrap();
     let clipped = path_row.trim_matches('│').trim();
     assert!(clipped.starts_with("Path /var/folders/"), "{disk}");
-    assert!(!clipped.contains(long_path), "long path should be clipped: {disk}");
-    assert!(!disk.contains("all processes") && !disk.contains("disk3"), "{disk}");
+    assert!(
+        !clipped.contains(long_path),
+        "long path should be clipped: {disk}"
+    );
+    assert!(
+        !disk.contains("all processes") && !disk.contains("disk3"),
+        "{disk}"
+    );
 }
 
 #[test]
@@ -874,9 +1026,19 @@ fn resolved_device_is_labelled_device_wide() {
         let panels = source_panels(&rows, cols, height);
         let disk = panels.local(DISK_IO);
         assert!(disk.contains("Device disk3 (all processes)"), "{disk}");
-        assert!(disk.contains("Read -- MiB/s") && disk.contains("Write -- MiB/s"), "{disk}");
-        for text in [panels.local(LOCAL_MEMORY), panels.local(HARDWARE), panels.splash(CACHE)] {
-            assert!(!text.contains("disk3") && !text.contains("all processes"), "{text}");
+        assert!(
+            disk.contains("Read -- MiB/s") && disk.contains("Write -- MiB/s"),
+            "{disk}"
+        );
+        for text in [
+            panels.local(LOCAL_MEMORY),
+            panels.local(HARDWARE),
+            panels.splash(CACHE),
+        ] {
+            assert!(
+                !text.contains("disk3") && !text.contains("all processes"),
+                "{text}"
+            );
         }
     }
 
@@ -887,7 +1049,10 @@ fn resolved_device_is_labelled_device_wide() {
     let rows = harness.visible_rows(100, 30);
     let panels = source_panels(&rows, 100, 30);
     let disk = panels.local(DISK_IO);
-    assert!(disk.contains(&format!("{device} | all processes")), "{disk}");
+    assert!(
+        disk.contains(&format!("{device} | all processes")),
+        "{disk}"
+    );
     assert!(!panels.local(LOCAL_MEMORY).contains(device));
 }
 
@@ -904,13 +1069,23 @@ fn unavailable_device_keeps_its_panel_and_missing_rates() {
         let right_width = (width - 2) / 2;
         let left_width = width - 2 - right_width;
         let right_x = 2 + left_width + 2;
-        assert_rectangle(&rows, right_x, height - 5 - memory_h, right_width, memory_h, LOCAL_MEMORY);
+        assert_rectangle(
+            &rows,
+            right_x,
+            height - 5 - memory_h,
+            right_width,
+            memory_h,
+            LOCAL_MEMORY,
+        );
         assert_rectangle(&rows, right_x, height - 5, right_width, 6, DISK_IO);
         let panels = source_panels(&rows, cols, height);
         let disk = panels.local(DISK_IO);
         assert!(disk.contains("Device unavailable"), "{disk}");
         assert!(disk.contains("R -- / W -- MiB/s"), "{disk}");
-        assert!(!disk.contains("all processes") && !disk.contains("disk3"), "{disk}");
+        assert!(
+            !disk.contains("all processes") && !disk.contains("disk3"),
+            "{disk}"
+        );
     }
 }
 
@@ -929,7 +1104,10 @@ fn compressed_history_expands_and_respects_current_availability() {
             let memory = panels.local(LOCAL_MEMORY);
             let lines: Vec<&str> = memory.lines().collect();
             assert_eq!(lines.len(), memory_h, "{memory}");
-            assert!(lines[5].contains("Compressed history (GiB, auto)"), "{memory}");
+            assert!(
+                lines[5].contains("Compressed history (GiB, auto)"),
+                "{memory}"
+            );
             let graph = lines[6];
             if active {
                 assert!(
@@ -943,8 +1121,14 @@ fn compressed_history_expands_and_respects_current_availability() {
                 assert!(graph.contains("0.00 GiB in observed samples"), "{memory}");
                 assert!(!graph.contains("Idle - no activity"), "{memory}");
             }
-            assert!(!graph.contains('·'), "dotted baseline in memory graph: {memory}");
-            assert!(!memory.contains("Device") && !memory.contains("disk3"), "{memory}");
+            assert!(
+                !graph.contains('·'),
+                "dotted baseline in memory graph: {memory}"
+            );
+            assert!(
+                !memory.contains("Device") && !memory.contains("disk3"),
+                "{memory}"
+            );
             let disk = panels.local(DISK_IO);
             assert_eq!(disk.lines().count(), 6, "{disk}");
             assert!(disk.contains("Device disk3 (all processes)"), "{disk}");
@@ -959,7 +1143,12 @@ fn compressed_history_expands_and_respects_current_availability() {
         let graph = memory.lines().nth(6).unwrap();
         assert!(memory.contains("Compressed -- GiB"), "{memory}");
         assert!(graph.contains("Unavailable"), "{memory}");
-        assert!(!graph.chars().any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)), "{memory}");
+        assert!(
+            !graph
+                .chars()
+                .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)),
+            "{memory}"
+        );
 
         harness.sample.compressed_bytes = Some(3 * 1_073_741_824);
         harness.state.compressed_history.clear();
@@ -967,7 +1156,14 @@ fn compressed_history_expands_and_respects_current_availability() {
         let panels = source_panels(&rows, cols, height);
         let memory = panels.local(LOCAL_MEMORY);
         assert!(memory.contains("Compressed 3.00 GiB"), "{memory}");
-        assert!(memory.lines().nth(6).unwrap().contains("Waiting for samples..."), "{memory}");
+        assert!(
+            memory
+                .lines()
+                .nth(6)
+                .unwrap()
+                .contains("Waiting for samples..."),
+            "{memory}"
+        );
     }
 }
 
@@ -1093,7 +1289,15 @@ fn offline_server_does_not_erase_live_local_telemetry() {
     let mut sample = sample_fixture();
     sample.pressure_level = Some(2);
     let harness = common::Harness::with(None, sample);
-    for (cols, height) in [(100, 30), (140, 42), (86, 27), (66, 24), (72, 20), (64, 15), (36, 10)] {
+    for (cols, height) in [
+        (100, 30),
+        (140, 42),
+        (86, 27),
+        (66, 24),
+        (72, 20),
+        (64, 15),
+        (36, 10),
+    ] {
         for color in [true, false] {
             let rows = common::grid_rows(&harness.render(cols, height, color), cols, height);
             if height < 12 {
@@ -1109,15 +1313,27 @@ fn offline_server_does_not_erase_live_local_telemetry() {
             assert_no_source_leaks(&panels, cols, height);
             let hardware = panels.local(HARDWARE);
             let memory = panels.local(LOCAL_MEMORY);
-            assert!(hardware.contains("62.0%") && hardware.contains("14.8%"), "{hardware}");
-            assert!(memory.contains("WARNING") && memory.contains("6.78 GiB"), "{memory}");
+            assert!(
+                hardware.contains("62.0%") && hardware.contains("14.8%"),
+                "{hardware}"
+            );
+            assert!(
+                memory.contains("WARNING") && memory.contains("6.78 GiB"),
+                "{memory}"
+            );
             if (cols >= 100 && height >= 30) || (cols >= 66 && height >= 24) {
-                assert!(memory.contains("Compressed 3.00 GiB") && memory.contains("Wired 5.00 GiB"), "{memory}");
+                assert!(
+                    memory.contains("Compressed 3.00 GiB") && memory.contains("Wired 5.00 GiB"),
+                    "{memory}"
+                );
             }
             if cols >= 100 && height >= 30 {
                 assert!(panels.splash(MEMORY).contains("--/-- GiB"));
                 let disk = panels.local(DISK_IO);
-                assert!(disk.contains("disk3") && disk.contains("all processes"), "{disk}");
+                assert!(
+                    disk.contains("disk3") && disk.contains("all processes"),
+                    "{disk}"
+                );
             } else {
                 assert!(panels.splash(ACTIVITY).contains("--/-- GiB"));
                 if cols >= 66 {
@@ -1150,7 +1366,10 @@ fn missing_local_probes_do_not_erase_splash_data() {
         assert!(memory.contains("UNKNOWN"), "{memory}");
         if cols >= 100 && height >= 30 {
             assert!(memory.contains("Swap used -- GiB"), "{memory}");
-            assert!(memory.contains("Compressed -- GiB") && memory.contains("Wired -- GiB"), "{memory}");
+            assert!(
+                memory.contains("Compressed -- GiB") && memory.contains("Wired -- GiB"),
+                "{memory}"
+            );
             assert!(memory.contains("Unavailable"), "{memory}");
             assert!(panels.local(DISK_IO).contains("Device unavailable"));
             assert!(panels.splash(INFERENCE).contains("Thermal critical"));
@@ -1159,7 +1378,10 @@ fn missing_local_probes_do_not_erase_splash_data() {
         } else {
             assert!(memory.contains("Swap -- GiB"), "{memory}");
             if cols >= 66 && height >= 24 {
-                assert!(memory.contains("Compressed -- GiB") && memory.contains("Wired -- GiB"), "{memory}");
+                assert!(
+                    memory.contains("Compressed -- GiB") && memory.contains("Wired -- GiB"),
+                    "{memory}"
+                );
             }
             assert!(panels.splash(ACTIVITY).contains("41.02/42.00 GiB"));
             if cols >= 66 {
@@ -1263,11 +1485,17 @@ fn gateway_readings_keep_their_source_labels_at_all_sizes() {
                 (2, width)
             };
             let memory = panel(&rows, memory_x, memory_width, LOCAL_MEMORY);
-            assert!(!hardware.contains("[GATEWAY]") && !memory.contains("[GATEWAY]"), "{text}");
+            assert!(
+                !hardware.contains("[GATEWAY]") && !memory.contains("[GATEWAY]"),
+                "{text}"
+            );
             if full {
                 let disk = panel(&rows, hardware_x, hardware_width, DISK_IO);
                 assert!(!disk.contains("[GATEWAY]"), "{disk}");
-                assert!(memory.contains("Compressed 3.00 GiB") && memory.contains("Wired 5.00 GiB"), "{memory}");
+                assert!(
+                    memory.contains("Compressed 3.00 GiB") && memory.contains("Wired 5.00 GiB"),
+                    "{memory}"
+                );
             }
         }
     }

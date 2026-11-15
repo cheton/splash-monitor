@@ -297,7 +297,9 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
         let disk_len = " | Disk / GiB".len() + disk_used.len() + disk_limit.len();
         let available = w - 4;
         let capacity = if metal_len + context_len + disk_len <= available {
-            format!("Metal {metal}/{limit} GiB | Context {context} | Disk {disk_used}/{disk_limit} GiB")
+            format!(
+                "Metal {metal}/{limit} GiB | Context {context} | Disk {disk_used}/{disk_limit} GiB"
+            )
         } else if metal_len + short_context_len + disk_len <= available {
             format!("Metal {metal}/{limit} GiB | Ctx {context} | Disk {disk_used}/{disk_limit} GiB")
         } else if metal_len + short_context_len <= available {

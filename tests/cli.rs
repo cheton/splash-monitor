@@ -596,7 +596,15 @@ fn fixture_memory_gauges_preserve_partial_unsigned_values() {
                 "http://127.0.0.1:1"
             };
             let output = common::run_binary(
-                &["--once", "--no-color", "--no-sensors", "--fixtures", fixture, "--url", url],
+                &[
+                    "--once",
+                    "--no-color",
+                    "--no-sensors",
+                    "--fixtures",
+                    fixture,
+                    "--url",
+                    url,
+                ],
                 &[("COLUMNS", "100"), ("LINES", "30")],
             );
             let (code, stdout, stderr) = common::codes(&output);
@@ -606,15 +614,26 @@ fn fixture_memory_gauges_preserve_partial_unsigned_values() {
                 screen.contains(if online { "STANDBY" } else { "OFFLINE" }),
                 "{name}, online={online}:\n{screen}"
             );
-            assert!(screen.contains(display), "{name}, online={online}:\n{screen}");
+            assert!(
+                screen.contains(display),
+                "{name}, online={online}:\n{screen}"
+            );
 
             let output = common::run_binary(
-                &["--json", "--no-sensors", "--fixtures", fixture, "--url", url],
+                &[
+                    "--json",
+                    "--no-sensors",
+                    "--fixtures",
+                    fixture,
+                    "--url",
+                    url,
+                ],
                 &[],
             );
             let (code, stdout, stderr) = common::codes(&output);
             assert_eq!(code, 0, "{name}, online={online}: {stderr}");
-            let value: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json sample");
+            let value: serde_json::Value =
+                serde_json::from_str(stdout.trim()).expect("json sample");
             assert_eq!(
                 value.get("compressed_bytes"),
                 Some(&serde_json::json!(compressed)),
@@ -779,7 +798,10 @@ fn once_keeps_splash_and_local_readings_separate() {
                 return contents.join("\n");
             }
         }
-        panic!("panel {title:?} not found or incomplete:\n{}", rows.join("\n"));
+        panic!(
+            "panel {title:?} not found or incomplete:\n{}",
+            rows.join("\n")
+        );
     }
 
     let server = TestServer::start(BASE_STATUS);
@@ -836,14 +858,30 @@ fn once_keeps_splash_and_local_readings_separate() {
                 let local_memory = panel(&visible, right_x, right_width, "[LOCAL] MEMORY");
                 let disk = panel(&visible, right_x, right_width, "[LOCAL] DISK I/O");
 
-                assert!(header.contains(if online { "STANDBY" } else { "OFFLINE" }), "{header}");
-                assert!(inference.contains(&format!("Thermal {thermal}")), "{inference}");
-                assert!(cache.contains(if online { "KV Spill 278" } else { "KV Spill --" }), "{cache}");
+                assert!(
+                    header.contains(if online { "STANDBY" } else { "OFFLINE" }),
+                    "{header}"
+                );
+                assert!(
+                    inference.contains(&format!("Thermal {thermal}")),
+                    "{inference}"
+                );
+                assert!(
+                    cache.contains(if online {
+                        "KV Spill 278"
+                    } else {
+                        "KV Spill --"
+                    }),
+                    "{cache}"
+                );
                 if online {
                     assert!(cache.contains("Hits 342"), "{cache}");
                     assert!(cache.contains("persist false | gate false"), "{cache}");
                 }
-                assert!(server_memory.contains(&format!("Metal {metal} GiB")), "{server_memory}");
+                assert!(
+                    server_memory.contains(&format!("Metal {metal} GiB")),
+                    "{server_memory}"
+                );
                 assert!(
                     server_memory.contains(if online {
                         "Context 262144 | RAM bound 139257"
@@ -852,39 +890,96 @@ fn once_keeps_splash_and_local_readings_separate() {
                     }),
                     "{server_memory}"
                 );
-                assert!(server_memory.contains(if online { "Weights released true" } else { "Weights released --" }), "{server_memory}");
-                assert!(hardware.contains("62.0%") && hardware.contains("14.8%"), "{hardware}");
-                assert!(local_memory.contains("Pressure WARNING | Free index 30%"), "{local_memory}");
-                assert!(local_memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"), "{local_memory}");
-                assert!(local_memory.contains("Swap used 6.78 GiB"), "{local_memory}");
-                assert!(local_memory.contains("IN -- MiB/s") && local_memory.contains("OUT -- MiB/s"), "{local_memory}");
+                assert!(
+                    server_memory.contains(if online {
+                        "Weights released true"
+                    } else {
+                        "Weights released --"
+                    }),
+                    "{server_memory}"
+                );
+                assert!(
+                    hardware.contains("62.0%") && hardware.contains("14.8%"),
+                    "{hardware}"
+                );
+                assert!(
+                    local_memory.contains("Pressure WARNING | Free index 30%"),
+                    "{local_memory}"
+                );
+                assert!(
+                    local_memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"),
+                    "{local_memory}"
+                );
+                assert!(
+                    local_memory.contains("Swap used 6.78 GiB"),
+                    "{local_memory}"
+                );
+                assert!(
+                    local_memory.contains("IN -- MiB/s") && local_memory.contains("OUT -- MiB/s"),
+                    "{local_memory}"
+                );
                 assert!(disk.contains("Device disk3 (all processes)"), "{disk}");
-                assert!(disk.contains("Read -- MiB/s") && disk.contains("Write -- MiB/s"), "{disk}");
+                assert!(
+                    disk.contains("Read -- MiB/s") && disk.contains("Write -- MiB/s"),
+                    "{disk}"
+                );
 
                 for splash in [&inference, &server_memory, &cache] {
                     for local in [
-                        "62.0%", "14.8%", "6.78 GiB", "WARNING", "Free index",
-                        "Compressed", "Wired", "disk3", "Device", "all processes",
+                        "62.0%",
+                        "14.8%",
+                        "6.78 GiB",
+                        "WARNING",
+                        "Free index",
+                        "Compressed",
+                        "Wired",
+                        "disk3",
+                        "Device",
+                        "all processes",
                     ] {
-                        assert!(!splash.contains(local), "local {local:?} in Splash panel:\n{splash}");
+                        assert!(
+                            !splash.contains(local),
+                            "local {local:?} in Splash panel:\n{splash}"
+                        );
                     }
                 }
                 for local in [&hardware, &local_memory, &disk] {
                     for splash in [
-                        "[SPLASH]", "Thermal", "nominal", "Metal", "41.02/42.00",
-                        "Weights released", "RAM bound", "Cache quota", "KV cap",
-                        "1048576", "KV Spill", "Hits 342",
+                        "[SPLASH]",
+                        "Thermal",
+                        "nominal",
+                        "Metal",
+                        "41.02/42.00",
+                        "Weights released",
+                        "RAM bound",
+                        "Cache quota",
+                        "KV cap",
+                        "1048576",
+                        "KV Spill",
+                        "Hits 342",
                     ] {
-                        assert!(!local.contains(splash), "Splash {splash:?} in local panel:\n{local}");
+                        assert!(
+                            !local.contains(splash),
+                            "Splash {splash:?} in local panel:\n{local}"
+                        );
                     }
                 }
                 for other_local in [&hardware, &local_memory] {
                     for device in ["Device", "disk3", "all processes"] {
-                        assert!(!other_local.contains(device), "disk {device:?} outside Disk I/O:\n{other_local}");
+                        assert!(
+                            !other_local.contains(device),
+                            "disk {device:?} outside Disk I/O:\n{other_local}"
+                        );
                     }
                 }
-                assert!(!hardware.contains("Compressed") && !hardware.contains("Wired"), "{hardware}");
-                assert!(!disk.contains("Compressed") && !disk.contains("Wired"), "{disk}");
+                assert!(
+                    !hardware.contains("Compressed") && !hardware.contains("Wired"),
+                    "{hardware}"
+                );
+                assert!(
+                    !disk.contains("Compressed") && !disk.contains("Wired"),
+                    "{disk}"
+                );
             } else if cols >= 66 {
                 let width = cols - 2;
                 let left_width = (width - 2) / 2;
@@ -896,48 +991,115 @@ fn once_keeps_splash_and_local_readings_separate() {
                 let local_memory = panel(&visible, 2, width, "[LOCAL] MEMORY");
                 let spill = panel(&visible, 2, width, "[SPLASH] KV SPILL");
 
-                assert!(status.contains(if online { "ONLINE" } else { "OFFLINE" }), "{status}");
+                assert!(
+                    status.contains(if online { "ONLINE" } else { "OFFLINE" }),
+                    "{status}"
+                );
                 assert!(status.contains(&format!("Thermal {thermal}")), "{status}");
                 assert!(activity.contains(&format!("{metal} GiB")), "{activity}");
-                assert!(spill.contains(if online { "Pages 1048576" } else { "Pages --" }), "{spill}");
-                assert!(hardware.contains("GPU 62.0%") && hardware.contains("CPU 14.8%"), "{hardware}");
-                assert!(local_memory.contains("WARNING") && local_memory.contains("Swap 6.78 GiB"), "{local_memory}");
-                assert!(local_memory.contains("Free index 30%") && local_memory.contains("Swap history"), "{local_memory}");
+                assert!(
+                    spill.contains(if online { "Pages 1048576" } else { "Pages --" }),
+                    "{spill}"
+                );
+                assert!(
+                    hardware.contains("GPU 62.0%") && hardware.contains("CPU 14.8%"),
+                    "{hardware}"
+                );
+                assert!(
+                    local_memory.contains("WARNING") && local_memory.contains("Swap 6.78 GiB"),
+                    "{local_memory}"
+                );
+                assert!(
+                    local_memory.contains("Free index 30%")
+                        && local_memory.contains("Swap history"),
+                    "{local_memory}"
+                );
                 if rows >= 24 {
-                    assert!(local_memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"), "{local_memory}");
+                    assert!(
+                        local_memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"),
+                        "{local_memory}"
+                    );
                 } else {
-                    assert!(!local_memory.contains("Compressed") && !local_memory.contains("Wired"), "{local_memory}");
+                    assert!(
+                        !local_memory.contains("Compressed") && !local_memory.contains("Wired"),
+                        "{local_memory}"
+                    );
                 }
-                assert!(!screen.contains("[LOCAL] DISK I/O") && !screen.contains("disk3") && !screen.contains("all processes"), "{screen}");
+                assert!(
+                    !screen.contains("[LOCAL] DISK I/O")
+                        && !screen.contains("disk3")
+                        && !screen.contains("all processes"),
+                    "{screen}"
+                );
 
                 for splash in [&status, &activity, &spill] {
                     for local in [
-                        "62.0%", "14.8%", "6.78 GiB", "WARNING", "Free index",
-                        "Compressed", "Wired", "disk3", "Device", "all processes",
+                        "62.0%",
+                        "14.8%",
+                        "6.78 GiB",
+                        "WARNING",
+                        "Free index",
+                        "Compressed",
+                        "Wired",
+                        "disk3",
+                        "Device",
+                        "all processes",
                     ] {
-                        assert!(!splash.contains(local), "local {local:?} in Splash panel:\n{splash}");
+                        assert!(
+                            !splash.contains(local),
+                            "local {local:?} in Splash panel:\n{splash}"
+                        );
                     }
                 }
                 for local in [&hardware, &local_memory] {
-                    for splash in ["[SPLASH]", "Thermal", "nominal", "Metal", "41.02/42.00", "1048576", "KV "] {
-                        assert!(!local.contains(splash), "Splash {splash:?} in local panel:\n{local}");
+                    for splash in [
+                        "[SPLASH]",
+                        "Thermal",
+                        "nominal",
+                        "Metal",
+                        "41.02/42.00",
+                        "1048576",
+                        "KV ",
+                    ] {
+                        assert!(
+                            !local.contains(splash),
+                            "Splash {splash:?} in local panel:\n{local}"
+                        );
                     }
                 }
             } else {
-                assert!(!screen.contains("[LOCAL] DISK I/O") && !screen.contains("disk3"), "{screen}");
-                assert!(!screen.contains("Compressed") && !screen.contains("Wired"), "{screen}");
                 assert!(
-                    visible.iter().any(|row| row == &format!("[SPLASH] Metal {metal} GiB")),
-                    "{screen}"
-                );
-                assert!(visible.iter().any(|row| row == "[LOCAL] Swap 6.78 GiB"), "{screen}");
-                assert!(
-                    visible.iter().any(|row| row.starts_with("[LOCAL] WARNING | OUT ")
-                        && row.ends_with("MiB/s")),
+                    !screen.contains("[LOCAL] DISK I/O") && !screen.contains("disk3"),
                     "{screen}"
                 );
                 assert!(
-                    visible.iter().any(|row| row == if online { "[SPLASH] ONLINE" } else { "[SPLASH] OFFLINE" }),
+                    !screen.contains("Compressed") && !screen.contains("Wired"),
+                    "{screen}"
+                );
+                assert!(
+                    visible
+                        .iter()
+                        .any(|row| row == &format!("[SPLASH] Metal {metal} GiB")),
+                    "{screen}"
+                );
+                assert!(
+                    visible.iter().any(|row| row == "[LOCAL] Swap 6.78 GiB"),
+                    "{screen}"
+                );
+                assert!(
+                    visible
+                        .iter()
+                        .any(|row| row.starts_with("[LOCAL] WARNING | OUT ")
+                            && row.ends_with("MiB/s")),
+                    "{screen}"
+                );
+                assert!(
+                    visible.iter().any(|row| row
+                        == if online {
+                            "[SPLASH] ONLINE"
+                        } else {
+                            "[SPLASH] OFFLINE"
+                        }),
                     "{screen}"
                 );
             }
