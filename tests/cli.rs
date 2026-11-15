@@ -494,3 +494,144 @@ fn offline_endpoint_renders_offline_and_exits_zero() {
     assert!(stdout.contains("--%"));
     assert!(!stdout.contains("0°C"));
 }
+
+#[test]
+fn once_keeps_splash_and_local_readings_separate() {
+    // Locate a panel by its title and horizontal bounds, rather than by
+    // physical row: grid_rows omits rows that are entirely blank.
+    fn panel(rows: &[String], x: usize, width: usize, title: &str) -> String {
+        let mut collecting = false;
+        let mut contents = Vec::new();
+        for row in rows {
+            let part: String = row.chars().skip(x - 1).take(width).collect();
+            if !collecting {
+                if !part.contains(title) {
+                    continue;
+                }
+                collecting = true;
+            }
+            let bottom = part.starts_with('└');
+            contents.push(part);
+            if bottom {
+                return contents.join("\n");
+            }
+        }
+        panic!("panel {title:?} not found or incomplete:\n{}", rows.join("\n"));
+    }
+
+    let server = TestServer::start(BASE_STATUS);
+    let dir = TmpDir::new("cli-source-separation");
+    let mut sample: serde_json::Value =
+        serde_json::from_str(FIXTURE_SAMPLE).expect("sample fixture JSON");
+    sample["pressure_level"] = 2.into();
+    let fixture = common::write_fixture(dir.path(), "sample.json", &sample.to_string());
+    let fixture = fixture.to_str().expect("fixture path");
+
+    for online in [true, false] {
+        let url = if online {
+            server.url.as_str()
+        } else {
+            "http://127.0.0.1:1"
+        };
+        let metal = if online { "41.02/42.00" } else { "--/--" };
+        let thermal = if online { "nominal" } else { "--" };
+
+        for (cols, rows) in [(100usize, 30usize), (72, 20), (36, 10)] {
+            let columns = cols.to_string();
+            let lines = rows.to_string();
+            let output = common::run_binary(
+                &["--once", "--no-color", "--fixtures", fixture, "--url", url],
+                &[("COLUMNS", &columns), ("LINES", &lines)],
+            );
+            let (code, stdout, stderr) = common::codes(&output);
+            assert_eq!(code, 0, "{cols}x{rows}, online={online}: {stderr}");
+            assert!(
+                !stdout.contains("\x1b[38;2;") && !stdout.contains("\x1b[0m"),
+                "--no-color emitted color escapes"
+            );
+            let visible = common::grid_rows(&stdout, cols, rows);
+            let screen = visible.join("\n");
+
+            if cols == 100 {
+                let width = cols - 2;
+                let left_width = (width - 2) / 2;
+                let right_x = 2 + left_width + 2;
+                let right_width = width - left_width - 2;
+                let header = panel(&visible, 2, width, "SPLASH MONITOR");
+                let inference = panel(&visible, 2, left_width, "[SPLASH] INFERENCE / REQUESTS");
+                let hardware = panel(&visible, right_x, right_width, "[LOCAL] CPU / GPU");
+                let cache = panel(&visible, 2, left_width, "[SPLASH] CACHE / KV SPILL");
+                let pressure = panel(&visible, right_x, right_width, "[LOCAL] PRESSURE / SWAP");
+                let footer = panel(&visible, 2, width, "[SPLASH] MEMORY / CONFIG");
+
+                assert!(header.contains(if online { "STANDBY" } else { "OFFLINE" }), "{header}");
+                assert!(inference.contains(&format!("Thermal {thermal}")), "{inference}");
+                assert!(cache.contains(if online { "KV Spill 278" } else { "KV Spill --" }), "{cache}");
+                if online {
+                    assert!(cache.contains("Hits 342"), "{cache}");
+                }
+                assert!(footer.contains(&format!("Metal {metal} GiB")), "{footer}");
+                assert!(hardware.contains("62.0%") && hardware.contains("14.8%"), "{hardware}");
+                assert!(pressure.contains("WARNING") && pressure.contains("Free 30%"), "{pressure}");
+                assert!(pressure.contains("Swap 6.78 GiB"), "{pressure}");
+                assert!(pressure.contains("Device disk3 (all processes)"), "{pressure}");
+
+                for splash in [&inference, &cache, &footer] {
+                    for local in ["62.0%", "14.8%", "6.78 GiB", "WARNING", "disk3"] {
+                        assert!(!splash.contains(local), "local {local:?} in Splash panel:\n{splash}");
+                    }
+                }
+                for local in [&hardware, &pressure] {
+                    for splash in ["Thermal", "nominal", "Metal", "41.02/42.00", "1048576", "KV Spill", "Hits 342"] {
+                        assert!(!local.contains(splash), "Splash {splash:?} in local panel:\n{local}");
+                    }
+                }
+            } else if cols == 72 {
+                let width = cols - 2;
+                let left_width = (width - 2) / 2;
+                let right_x = 2 + left_width + 2;
+                let right_width = width - left_width - 2;
+                let status = panel(&visible, 2, left_width, "[SPLASH] STATUS");
+                let hardware = panel(&visible, right_x, right_width, "[LOCAL] CPU / GPU");
+                let activity = panel(&visible, 2, width, "[SPLASH] ACTIVITY");
+                let pressure = panel(&visible, 2, width, "[LOCAL] PRESSURE / SWAP");
+                let spill = panel(&visible, 2, width, "[SPLASH] KV SPILL");
+
+                assert!(status.contains(if online { "ONLINE" } else { "OFFLINE" }), "{status}");
+                assert!(status.contains(&format!("Thermal {thermal}")), "{status}");
+                assert!(activity.contains(&format!("{metal} GiB")), "{activity}");
+                assert!(spill.contains(if online { "Pages 1048576" } else { "Pages --" }), "{spill}");
+                assert!(hardware.contains("GPU 62.0%") && hardware.contains("CPU 14.8%"), "{hardware}");
+                assert!(pressure.contains("WARNING") && pressure.contains("Swap 6.78 GiB"), "{pressure}");
+
+                for splash in [&status, &activity, &spill] {
+                    for local in ["62.0%", "14.8%", "6.78 GiB", "WARNING", "disk3"] {
+                        assert!(!splash.contains(local), "local {local:?} in Splash panel:\n{splash}");
+                    }
+                }
+                for local in [&hardware, &pressure] {
+                    for splash in ["Thermal", "nominal", "Metal", "41.02/42.00", "1048576", "KV "] {
+                        assert!(!local.contains(splash), "Splash {splash:?} in local panel:\n{local}");
+                    }
+                }
+            } else {
+                assert!(
+                    visible.iter().any(|row| row == &format!("[SPLASH] Metal {metal} GiB")),
+                    "{screen}"
+                );
+                assert!(visible.iter().any(|row| row == "[LOCAL] Swap 6.78 GiB"), "{screen}");
+                assert!(
+                    visible.iter().any(|row| row.starts_with("[LOCAL] WARNING | OUT ")
+                        && row.ends_with("MiB/s")),
+                    "{screen}"
+                );
+                assert!(
+                    visible.iter().any(|row| row == if online { "[SPLASH] ONLINE" } else { "[SPLASH] OFFLINE" }),
+                    "{screen}"
+                );
+            }
+        }
+    }
+
+    assert_eq!(server.paths(), vec!["/status"; 3]);
+}

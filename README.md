@@ -16,7 +16,7 @@
 - Inference throughput and request phases: decode tokens/s, prefill rate, TTFT and decode gap percentiles.
 - Splash cache read/write MiB/s from server counters, with in-session history graphs.
 - Per-core CPU utilization and die temperatures.
-- GPU utilization, power and thermal state.
+- GPU utilization and power, plus the Splash thermal state.
 - macOS swap rates, swap usage, memory pressure and free memory percentage.
 
 ## Install
@@ -71,6 +71,11 @@ Precedence: `--url` > `SPLASH_URL` > `SPLASH_HOST` / `SPLASH_PORT` > default `ht
 `auto` asks the terminal through `COLORFGBG`: a background index of 7 or 15 selects the light palette, anything else (including no hint at all) stays dark. `--no-color`, `NO_COLOR`, or `TERM=dumb` turn colors off entirely.
 
 ## Where the numbers come from
+
+Panel titles identify the source: `[SPLASH]` readings come from the configured
+`/status` endpoint; `[LOCAL]` readings come from the Mac running the monitor,
+including when accessed through SSH. These labels do not indicate whether the
+Splash server is physically remote.
 
 | Splash `GET /status` | Displayed as |
 |:--|:--|

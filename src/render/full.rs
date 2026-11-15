@@ -14,8 +14,8 @@ use crate::theme::{Color, Theme};
 const MIN_GRAPH_WIDTH: usize = 4;
 const MAX_GRAPH_WIDTH: usize = 12;
 /// Rows the hardware panel spends before the core table: GPU meter, GPU power,
-/// CPU meter, thermal state.
-const TABLE_FIRST_ROW: usize = 5;
+/// and CPU meter.
+const TABLE_FIRST_ROW: usize = 4;
 
 /// The text a cell spends on the label (`C17`), the utilization (`100%`) and
 /// the temperature (`88°C`, or `88°` without graphs), plus one separator
@@ -93,12 +93,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     let rx = x + lw + gap;
     let top = 4usize;
     let footer = rows - 4;
-    let top_h = (footer - top - 1) / 2;
+    let top_h = (footer - top) / 2;
     let bottom = top + top_h + 1;
     let bh = footer - bottom - 1;
     let graphw = lw - 4;
     let graphw2 = rw - 4;
-    let gheight = top_h.saturating_sub(6);
+    let gheight = top_h.saturating_sub(8);
 
     // Header strip.
     draw_box(grid, theme, x, 1, w, 3, "SPLASH MONITOR");
@@ -125,29 +125,18 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     render_inference(grid, frame, theme, x, top, lw, graphw, gheight, top_h);
     render_hardware(grid, frame, theme, rx, top, rw, graphw2, top_h);
     render_cache(grid, frame, theme, x, bottom, lw, graphw, bh);
-    render_requests(grid, frame, theme, rx, bottom, rw, graphw2, bh);
+    render_pressure(grid, frame, theme, rx, bottom, rw, graphw2, bh);
 
-    draw_box(grid, theme, x, footer, w, 4, "MEMORY / CAPACITY / CONFIG");
+    draw_box(grid, theme, x, footer, w, 4, "[SPLASH] MEMORY / CONFIG");
     grid.at(
         x + 2,
         footer + 1,
         Some(theme.good),
         &format!(
-            "Splash {}/{} GiB",
+            "Metal {}/{} GiB",
             frame.display.metal_gib, frame.display.limit_gib
         ),
-        w / 3 - 2,
-    );
-    grid.at(
-        x + w / 3,
-        footer + 1,
-        Some(theme.caution),
-        &format!(
-            "Swap {} GiB | OUT {} MiB/s",
-            frame.swap_used_gib(),
-            Frame::rate_text(frame.rates.swap_out_mib)
-        ),
-        w / 3 - 2,
+        2 * w / 3 - 3,
     );
     grid.at(
         x + 2 * w / 3,
@@ -184,7 +173,7 @@ fn render_inference(
     gheight: usize,
     top_h: usize,
 ) {
-    draw_box(grid, theme, x, top, lw, top_h, "INFERENCE / THROUGHPUT");
+    draw_box(grid, theme, x, top, lw, top_h, "[SPLASH] INFERENCE / REQUESTS");
     grid.at(
         x + 2,
         top + 1,
@@ -208,8 +197,8 @@ fn render_inference(
         top + 2,
         Some(theme.muted),
         &format!(
-            "Active {} | Queued {} | Gap p95 {} ms",
-            frame.view.active, frame.view.scheduler_queued, frame.display.gap_p95
+            "Active {} | Queued {} | Waiting {}",
+            frame.view.active, frame.view.scheduler_queued, frame.view.scheduler_waiting
         ),
         lw - 4,
     );
@@ -217,13 +206,43 @@ fn render_inference(
         x + 2,
         top + 3,
         Some(theme.muted),
-        "Decode tok/s (sampled global counter)",
+        &format!(
+            "Prefill {} | Decode {} | Phase {}",
+            frame.view.scheduler_prefill, frame.view.scheduler_decode, frame.view.phase
+        ),
+        lw - 4,
+    );
+    let gap_text = format!("Gap p95 {} ms | Thermal ", frame.display.gap_p95);
+    let gap_width = gap_text.chars().count().min(lw - 4);
+    grid.at(
+        x + 2,
+        top + 4,
+        Some(theme.muted),
+        &gap_text,
+        gap_width,
+    );
+    grid.at(
+        x + 2 + gap_width,
+        top + 4,
+        Some(frame.thermal_color(theme)),
+        &frame.view.thermal_state,
+        lw - 4 - gap_width,
+    );
+    grid.at(
+        x + 2,
+        top + 5,
+        Some(theme.muted),
+        &format!(
+            "Headroom {} GiB | denied {}",
+            frame.display.memory_headroom_gib,
+            opt_u64_text(frame.view.denied_reservations)
+        ),
         lw - 4,
     );
     plot_history(
         grid,
         x + 2,
-        top + 4,
+        top + 6,
         graphw,
         gheight,
         &frame.state.output_history,
@@ -254,7 +273,7 @@ fn render_hardware(
     graphw2: usize,
     top_h: usize,
 ) {
-    draw_box(grid, theme, rx, top, rw, top_h, "HARDWARE / THERMAL");
+    draw_box(grid, theme, rx, top, rw, top_h, "[LOCAL] CPU / GPU");
 
     // Aggregate meters read like btop: label, bar, utilization at the end of
     // the bar, die temperature at the end of the row. Power and load averages
@@ -316,13 +335,6 @@ fn render_hardware(
         )),
         &cpu_temp,
         PERCENT_WIDTH,
-    );
-    grid.at(
-        rx + 2,
-        top + 4,
-        Some(frame.thermal_color(theme)),
-        &format!("Thermal {} (Splash API)", frame.view.thermal_state),
-        rw - 4,
     );
 
     let inner_width = rw - 4;
@@ -610,7 +622,7 @@ fn render_cache(
     graphw: usize,
     bh: usize,
 ) {
-    draw_box(grid, theme, x, bottom, lw, bh, "SPLASH CACHE / I/O");
+    draw_box(grid, theme, x, bottom, lw, bh, "[SPLASH] CACHE / KV SPILL");
     grid.at(
         x + 2,
         bottom + 1,
@@ -659,55 +671,51 @@ fn render_cache(
         x + 2,
         bottom + 3,
         Some(theme.data),
-        "READ  •  Splash cache",
+        &format!(
+            "Hits {} | Restores {}",
+            opt_u64_text(frame.view.cache_hits),
+            opt_u64_text(frame.view.disk_restores)
+        ),
         lw - 4,
     );
-    let read_height = ((bh as i64 - 7) / 2).max(1) as usize;
-    plot_history(
-        grid,
+    grid.at(
         x + 2,
         bottom + 4,
-        graphw,
+        Some(theme.hot),
+        &format!(
+            "KV Spill {} | Pending writes {}",
+            frame.display.spill_requests,
+            opt_u64_text(frame.view.cache_write_wait)
+        ),
+        lw - 4,
+    );
+
+    let chart_rows = bh - 7;
+    let read_height = chart_rows / 2;
+    let write_height = chart_rows - read_height;
+    grid.at(x + 2, bottom + 5, Some(theme.data), "R", 1);
+    plot_history(
+        grid,
+        x + 4,
+        bottom + 5,
+        graphw - 2,
         read_height,
         &frame.state.cache_read_history,
         0.0,
         theme.data_ramp,
     );
-    let write_y = bottom + 4 + read_height;
-
-    // The device row, when a `--cache-dir` volume resolved, costs one row of
-    // the write chart so nothing overlaps.
-    let device = frame.sample.volume.as_ref().map(|volume| {
-        format!(
-            "Device {}  R {} W {} MiB/s  (all processes)",
-            volume.device,
-            Frame::rate_text(frame.rates.volume_read_mib),
-            Frame::rate_text(frame.rates.volume_write_mib)
-        )
-    });
-    let reserve = if device.is_some() { 1 } else { 0 };
-    let write_height = ((bottom + bh - 2 - write_y - 1 - reserve) as i64).max(1) as usize;
-    grid.at(
-        x + 2,
-        write_y,
-        Some(theme.hot),
-        "WRITE •  Splash cache",
-        lw - 4,
-    );
+    let write_y = bottom + 5 + read_height;
+    grid.at(x + 2, write_y, Some(theme.hot), "W", 1);
     plot_history(
         grid,
-        x + 2,
-        write_y + 1,
-        graphw,
+        x + 4,
+        write_y,
+        graphw - 2,
         write_height,
         &frame.state.cache_write_history,
         0.0,
         theme.hot_ramp,
     );
-
-    if let Some(device) = &device {
-        grid.at(x + 2, bottom + bh - 3, Some(theme.muted), device, lw - 4);
-    }
     grid.at(
         x + 2,
         bottom + bh - 2,
@@ -733,7 +741,7 @@ fn render_cache(
 
 // Geometry stays positional: every panel is drawn at one box with its own graph column.
 #[allow(clippy::too_many_arguments)]
-fn render_requests(
+fn render_pressure(
     grid: &mut Grid,
     frame: &Frame<'_>,
     theme: &Theme,
@@ -743,14 +751,15 @@ fn render_requests(
     graphw2: usize,
     bh: usize,
 ) {
-    draw_box(grid, theme, rx, bottom, rw, bh, "REQUESTS / PRESSURE");
+    draw_box(grid, theme, rx, bottom, rw, bh, "[LOCAL] PRESSURE / SWAP");
     grid.at(
         rx + 2,
         bottom + 1,
-        Some(theme.text),
+        Some(frame.pressure_color(theme)),
         &format!(
-            "Active {} | Queued {} | Waiting {}",
-            frame.view.active, frame.view.scheduler_queued, frame.view.scheduler_waiting
+            "Pressure {} | Free {}%",
+            frame.pressure_text(),
+            frame.free_percent_text()
         ),
         rw - 4,
     );
@@ -759,75 +768,58 @@ fn render_requests(
         bottom + 2,
         Some(theme.muted),
         &format!(
-            "Prefill {} | Decode {} | Phase {}",
-            frame.view.scheduler_prefill, frame.view.scheduler_decode, frame.view.phase
+            "Swap {} GiB | IN {} MiB/s",
+            frame.swap_used_gib(),
+            Frame::rate_text(frame.rates.swap_in_mib)
         ),
         rw - 4,
     );
     grid.at(
         rx + 2,
         bottom + 3,
-        Some(theme.data),
-        &format!(
-            "Hits {} | Restores {}",
-            opt_u64_text(frame.view.cache_hits),
-            opt_u64_text(frame.view.disk_restores)
-        ),
+        Some(theme.muted),
+        &format!("OUT {} MiB/s", Frame::rate_text(frame.rates.swap_out_mib)),
         rw - 4,
     );
     grid.at(
         rx + 2,
         bottom + 4,
-        Some(theme.hot),
-        &format!(
-            "KV Spill {} | Pending writes {}",
-            frame.display.spill_requests,
-            opt_u64_text(frame.view.cache_write_wait)
-        ),
+        Some(theme.muted),
+        "Swap OUT history",
         rw - 4,
     );
-    grid.at(
+
+    let reserved_rows = if frame.sample.volume.is_some() { 2 } else { 0 };
+    plot_history(
+        grid,
         rx + 2,
         bottom + 5,
-        Some(frame.pressure_color(theme)),
-        &format!(
-            "Memory {} | Swap OUT {} MiB/s",
-            frame.pressure_text(),
-            Frame::rate_text(frame.rates.swap_out_mib)
-        ),
-        rw - 4,
+        graphw2,
+        bh.saturating_sub(6 + reserved_rows),
+        &frame.state.swap_out_history,
+        0.0,
+        theme.caution_ramp,
     );
-    grid.at(
-        rx + 2,
-        bottom + 6,
-        Some(theme.muted),
-        "Swap OUT history (macOS)",
-        rw - 4,
-    );
-    let swaph = (bh as i64 - 9).max(0) as usize;
-    if swaph > 0 {
-        plot_history(
-            grid,
+    if let Some(volume) = &frame.sample.volume {
+        grid.at(
             rx + 2,
-            bottom + 7,
-            graphw2,
-            swaph,
-            &frame.state.swap_out_history,
-            0.0,
-            theme.caution_ramp,
+            bottom + bh - 3,
+            Some(theme.muted),
+            &format!("Device {} (all processes)", volume.device),
+            rw - 4,
+        );
+        grid.at(
+            rx + 2,
+            bottom + bh - 2,
+            Some(theme.muted),
+            &format!(
+                "R {} / W {} MiB/s",
+                Frame::rate_text(frame.rates.volume_read_mib),
+                Frame::rate_text(frame.rates.volume_write_mib)
+            ),
+            rw - 4,
         );
     }
-    grid.at(
-        rx + 2,
-        bottom + bh - 2,
-        Some(theme.muted),
-        &format!(
-            "Headroom {} GiB | denied {}",
-            frame.display.memory_headroom_gib,
-            opt_u64_text(frame.view.denied_reservations)
-        ),
-        rw - 4,
-    );
 }
 
 fn opt_u64_text(value: Option<u64>) -> String {
