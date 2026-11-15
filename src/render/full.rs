@@ -1,7 +1,10 @@
 //! Dense btop-inspired layout for terminals at least 100 columns by 30 rows.
 //! Graphs always show observed samples; unknown values render `--`, never 0.
 
-use crate::render::{bar_graph, dot_graph, draw_box, gradient_meter, plot_history, Frame, Grid};
+use crate::render::{
+    bar_graph, dot_graph, draw_box, gradient_meter, plot_history, sparkline, Frame, Grid,
+};
+use crate::status::num_gib;
 use crate::theme::{Color, Theme};
 
 /// A core cell is `label | utilization line | percent | temperature area |
@@ -92,13 +95,19 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     let lw = w - gap - rw;
     let rx = x + lw + gap;
     let top = 4usize;
-    let footer = rows - 4;
-    let top_h = (footer - top) / 2;
-    let bottom = top + top_h + 1;
-    let bh = footer - bottom - 1;
+    let extra = rows - 30;
+    let inference_h = 11 + extra / 2;
+    let cache_y = top + inference_h;
+    let cache_h = 10 + extra - extra / 2;
+    let memory_config_y = cache_y + cache_h;
+    let right_body_h = rows - 3 - 6;
+    let hardware_h = right_body_h.div_ceil(2);
+    let local_memory_y = top + hardware_h;
+    let local_memory_h = right_body_h - hardware_h;
+    let disk_y = local_memory_y + local_memory_h;
     let graphw = lw - 4;
     let graphw2 = rw - 4;
-    let gheight = top_h.saturating_sub(8);
+    let gheight = inference_h.saturating_sub(8);
 
     // Header strip.
     draw_box(grid, theme, x, 1, w, 3, "SPLASH MONITOR");
@@ -124,47 +133,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     );
     grid.at(x + w - 12, 2, Some(theme.caution), "q: quit", 9);
 
-    render_inference(grid, frame, theme, x, top, lw, graphw, gheight, top_h);
-    render_hardware(grid, frame, theme, rx, top, rw, graphw2, top_h);
-    render_cache(grid, frame, theme, x, bottom, lw, graphw, bh);
-    render_pressure(grid, frame, theme, rx, bottom, rw, graphw2, bh);
-
-    let title = if frame.view.gateway {
-        "[GATEWAY] MEMORY / CONFIG"
-    } else {
-        "[SPLASH] MEMORY / CONFIG"
-    };
-    draw_box(grid, theme, x, footer, w, 4, title);
-    grid.at(
-        x + 2,
-        footer + 1,
-        Some(theme.good),
-        &format!(
-            "Metal {}/{} GiB",
-            frame.display.metal_gib, frame.display.limit_gib
-        ),
-        2 * w / 3 - 3,
-    );
-    grid.at(
-        x + 2 * w / 3,
-        footer + 1,
-        Some(theme.muted),
-        &format!("Weights released {}", frame.view.released),
-        w / 3 - 3,
-    );
-    grid.at(
-        x + 2,
-        footer + 2,
-        Some(theme.muted),
-        &format!(
-            "Context {} | RAM bound {} | Cache quota {} GiB | KV cap {}",
-            frame.display.context_window,
-            frame.display.resident,
-            frame.display.cache_limit_gib,
-            frame.display.kv_capacity
-        ),
-        w - 4,
-    );
+    render_inference(grid, frame, theme, x, top, lw, graphw, gheight, inference_h);
+    render_cache(grid, frame, theme, x, cache_y, lw, graphw, cache_h);
+    render_memory_config(grid, frame, theme, x, memory_config_y, lw);
+    render_hardware(grid, frame, theme, rx, top, rw, graphw2, hardware_h);
+    render_local_memory(grid, frame, theme, rx, local_memory_y, rw, local_memory_h);
+    render_disk_io(grid, frame, theme, rx, disk_y, rw);
 }
 
 // Panel geometry is computed once in `render` and shared with the other panels.
@@ -666,11 +640,11 @@ fn render_cache(
             bottom + 2,
             Some(theme.muted),
             &format!(
-                "Used {}/{} GiB | persist {} | gate {}",
-                frame.display.cache_used_gib,
-                frame.display.cache_limit_gib,
+                "persist {} | gate {} | {}/{} GiB",
                 frame.display.cache_persistent,
-                frame.view.cache_writes_gated
+                frame.view.cache_writes_gated,
+                frame.display.cache_used_gib,
+                frame.display.cache_limit_gib
             ),
             lw - 4,
         );
@@ -756,85 +730,241 @@ fn render_cache(
     );
 }
 
-// Geometry stays positional: every panel is drawn at one box with its own graph column.
-#[allow(clippy::too_many_arguments)]
-fn render_pressure(
+fn render_memory_config(
     grid: &mut Grid,
     frame: &Frame<'_>,
     theme: &Theme,
-    rx: usize,
-    bottom: usize,
-    rw: usize,
-    graphw2: usize,
-    bh: usize,
+    x: usize,
+    y: usize,
+    w: usize,
 ) {
-    draw_box(grid, theme, rx, bottom, rw, bh, "[LOCAL] PRESSURE / SWAP");
+    let title = if frame.view.gateway {
+        "[GATEWAY] MEMORY / CONFIG"
+    } else {
+        "[SPLASH] MEMORY / CONFIG"
+    };
+    draw_box(grid, theme, x, y, w, 6, title);
     grid.at(
-        rx + 2,
-        bottom + 1,
+        x + 2,
+        y + 1,
+        Some(theme.good),
+        &format!(
+            "Metal {}/{} GiB",
+            frame.display.metal_gib, frame.display.limit_gib
+        ),
+        w - 4,
+    );
+    grid.at(
+        x + 2,
+        y + 2,
+        Some(theme.muted),
+        &format!("Weights released {}", frame.view.released),
+        w - 4,
+    );
+    grid.at(
+        x + 2,
+        y + 3,
+        Some(theme.muted),
+        &format!(
+            "Context {} | RAM bound {}",
+            frame.display.context_window, frame.display.resident
+        ),
+        w - 4,
+    );
+    grid.at(
+        x + 2,
+        y + 4,
+        Some(theme.muted),
+        &format!(
+            "Cache quota {} GiB | KV cap {}",
+            frame.display.cache_limit_gib, frame.display.kv_capacity
+        ),
+        w - 4,
+    );
+}
+
+fn render_local_memory(
+    grid: &mut Grid,
+    frame: &Frame<'_>,
+    theme: &Theme,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+) {
+    draw_box(grid, theme, x, y, w, h, "[LOCAL] MEMORY");
+    grid.at(
+        x + 2,
+        y + 1,
         Some(frame.pressure_color(theme)),
         &format!(
-            "Pressure {} | Free {}%",
+            "Pressure {} | Free index {}%",
             frame.pressure_text(),
             frame.free_percent_text()
         ),
-        rw - 4,
+        w - 4,
     );
     grid.at(
-        rx + 2,
-        bottom + 2,
+        x + 2,
+        y + 2,
         Some(theme.muted),
         &format!(
-            "Swap {} GiB | IN {} MiB/s",
-            frame.swap_used_gib(),
-            Frame::rate_text(frame.rates.swap_in_mib)
+            "Compressed {} GiB | Wired {} GiB",
+            frame.compressed_gib(),
+            frame.wired_gib()
         ),
-        rw - 4,
+        w - 4,
     );
     grid.at(
-        rx + 2,
-        bottom + 3,
+        x + 2,
+        y + 3,
+        Some(theme.muted),
+        &format!("Swap used {} GiB", frame.swap_used_gib()),
+        w - 4,
+    );
+    grid.at(
+        x + 2,
+        y + 4,
+        Some(theme.muted),
+        &format!("IN {} MiB/s", Frame::rate_text(frame.rates.swap_in_mib)),
+        w / 2 - 3,
+    );
+    grid.at(
+        x + w / 2,
+        y + 4,
         Some(theme.muted),
         &format!("OUT {} MiB/s", Frame::rate_text(frame.rates.swap_out_mib)),
-        rw - 4,
+        w / 2 - 3,
     );
     grid.at(
-        rx + 2,
-        bottom + 4,
+        x + 2,
+        y + 5,
         Some(theme.muted),
-        "Swap OUT history",
-        rw - 4,
+        "Compressed history (GiB, auto)",
+        w - 4,
     );
 
-    let reserved_rows = if frame.sample.volume.is_some() { 2 } else { 0 };
-    plot_history(
-        grid,
-        rx + 2,
-        bottom + 5,
-        graphw2,
-        bh.saturating_sub(6 + reserved_rows),
-        &frame.state.swap_out_history,
-        0.0,
-        theme.caution_ramp,
-    );
+    let history = &frame.state.compressed_history;
+    let message = if frame.sample.compressed_bytes.is_none() {
+        Some("Unavailable")
+    } else if history.is_empty() {
+        Some("Waiting for samples...")
+    } else if history.iter().all(|value| *value == 0.0) {
+        Some("0.00 GiB in observed samples")
+    } else {
+        None
+    };
+    if let Some(message) = message {
+        grid.at(x + 2, y + 6, Some(theme.muted), message, w - 4);
+    } else {
+        plot_history(
+            grid,
+            x + 2,
+            y + 6,
+            w - 4,
+            h - 7,
+            history,
+            0.0,
+            theme.data_ramp,
+        );
+    }
+}
+
+fn render_disk_io(
+    grid: &mut Grid,
+    frame: &Frame<'_>,
+    theme: &Theme,
+    x: usize,
+    y: usize,
+    w: usize,
+) {
+    draw_box(grid, theme, x, y, w, 6, "[LOCAL] DISK I/O");
     if let Some(volume) = &frame.sample.volume {
         grid.at(
-            rx + 2,
-            bottom + bh - 3,
+            x + 2,
+            y + 1,
             Some(theme.muted),
-            &format!("Device {} (all processes)", volume.device),
-            rw - 4,
+            &longest_fit(
+                format!("Device {} (all processes)", volume.device),
+                format!("{} | all processes", volume.device),
+                w - 4,
+            ),
+            w - 4,
+        );
+        let graph_x = x + 23;
+        for (row, label, rate, history, color) in [
+            (
+                y + 2,
+                "Read",
+                frame.rates.volume_read_mib,
+                &frame.state.volume_read_history,
+                theme.data,
+            ),
+            (
+                y + 3,
+                "Write",
+                frame.rates.volume_write_mib,
+                &frame.state.volume_write_history,
+                theme.hot,
+            ),
+        ] {
+            grid.at(
+                x + 2,
+                row,
+                Some(color),
+                &format!("{label} {} MiB/s", Frame::rate_text(rate)),
+                20,
+            );
+            if rate.is_some() {
+                sparkline(grid, graph_x, row, w - 25, history, color);
+            }
+        }
+        let read = volume
+            .read_bytes
+            .and(frame.state.volume_session_read_bytes)
+            .map(num_gib)
+            .unwrap_or_else(|| "--".to_string());
+        let written = volume
+            .write_bytes
+            .and(frame.state.volume_session_write_bytes)
+            .map(num_gib)
+            .unwrap_or_else(|| "--".to_string());
+        grid.at(
+            x + 2,
+            y + 4,
+            Some(theme.muted),
+            &format!("Session R {read} / W {written} GiB"),
+            w - 4,
+        );
+    } else if let Some(path) = &frame.sample.device_unresolved {
+        grid.at(
+            x + 2,
+            y + 1,
+            Some(theme.muted),
+            "Device I/O unresolved",
+            w - 4,
         );
         grid.at(
-            rx + 2,
-            bottom + bh - 2,
+            x + 2,
+            y + 2,
             Some(theme.muted),
-            &format!(
-                "R {} / W {} MiB/s",
-                Frame::rate_text(frame.rates.volume_read_mib),
-                Frame::rate_text(frame.rates.volume_write_mib)
-            ),
-            rw - 4,
+            &format!("Path {path}"),
+            w - 4,
+        );
+    } else {
+        grid.at(
+            x + 2,
+            y + 1,
+            Some(theme.muted),
+            "Device unavailable",
+            w - 4,
+        );
+        grid.at(
+            x + 2,
+            y + 2,
+            Some(theme.muted),
+            "R -- / W -- MiB/s",
+            w - 4,
         );
     }
 }

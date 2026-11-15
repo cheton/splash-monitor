@@ -66,7 +66,7 @@ Options:\n\
                            or SPLASH_GATEWAY_API_KEY is set\n\
       --gateway-key KEY    Bearer token for the oMLX gateway (its auth.api_key)\n\
   -l, --log FILE           Append measurements to CSV\n\
-      --cache-dir PATH     Optional device-level I/O diagnostics\n\
+      --cache-dir PATH     Device-wide disk I/O rows, default $TMPDIR\n\
       --no-sensors         Do not query optional hardware sensors\n\
       --once               Render one frame, then exit (also works in a pipe)\n\
       --no-color           Disable colors (still uses cursor controls)\n\
@@ -235,6 +235,11 @@ pub fn parse(
             .ok_or_else(|| CliError::message_only("Theme must be auto, dark, or light."))?,
         None => Mode::Auto,
     };
+
+    // The device rows need a path to resolve a volume from. `$TMPDIR` is where
+    // the engine keeps its cache temp files, so no flag is needed for the usual
+    // case; `--cache-dir` or `SPLASH_CACHE_DIR` points at another volume.
+    let cache_dir = cache_dir.or_else(|| env_value(env, "TMPDIR").map(PathBuf::from));
 
     // The fallback is on when a gateway URL or key was given. A key alone
     // uses the oMLX default gateway port.

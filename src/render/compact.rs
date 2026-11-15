@@ -230,13 +230,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             w - 4,
         );
         if th >= 4 {
-            grid.at(
-                x + 2,
-                start + 2,
-                Some(theme.data),
-                &cpu_line(frame),
-                w - 4,
-            );
+            grid.at(x + 2, start + 2, Some(theme.data), &cpu_line(frame), w - 4);
         }
     }
 
@@ -327,7 +321,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     }
 
     let sy = cy + ch;
-    draw_box(grid, theme, x, sy, w, sh, "[LOCAL] PRESSURE / SWAP");
+    draw_box(grid, theme, x, sy, w, sh, "[LOCAL] MEMORY");
     let pressure_color = frame.pressure_color(theme);
     if cols < 66 {
         grid.at(
@@ -359,7 +353,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 sy + 2,
                 Some(theme.muted),
                 &format!(
-                    "Free {}% | IN {} MiB/s",
+                    "Free index {}% | IN {} MiB/s",
                     frame.free_percent_text(),
                     Frame::rate_text(frame.rates.swap_in_mib)
                 ),
@@ -394,8 +388,8 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 section,
                 sy + 2,
                 Some(theme.muted),
-                &format!("Free {}%", frame.free_percent_text()),
-                12,
+                &format!("Free index {}%", frame.free_percent_text()),
+                w / 3 - 3,
             );
             grid.at(
                 x + w / 3,
@@ -423,7 +417,11 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             section,
             sy + 4,
             Some(theme.muted),
-            "Swap amount is historical; rates measure current I/O.",
+            &format!(
+                "Compressed {} GiB | Wired {} GiB",
+                frame.compressed_gib(),
+                frame.wired_gib()
+            ),
             w - 4,
         );
     }
@@ -468,7 +466,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             x + 1,
             used + 1,
             Some(theme.muted),
-            "Pressure + swap OUT trend matter more than total swap used.",
+            "Swap used can reflect earlier activity.",
             w - 2,
         );
     }

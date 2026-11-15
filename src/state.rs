@@ -19,9 +19,15 @@ pub struct DashboardState {
     pub gpu_history: VecDeque<f64>,
     pub cpu_history: VecDeque<f64>,
     pub swap_history: VecDeque<f64>,
-    pub swap_out_history: VecDeque<f64>,
+    pub compressed_history: VecDeque<f64>,
     pub cache_read_history: VecDeque<f64>,
     pub cache_write_history: VecDeque<f64>,
+    /// Device-wide transfer rates, in MiB/s, for the current volume.
+    pub volume_read_history: VecDeque<f64>,
+    pub volume_write_history: VecDeque<f64>,
+    /// Observed bytes transferred during this session on the current device.
+    pub volume_session_read_bytes: Option<u64>,
+    pub volume_session_write_bytes: Option<u64>,
     pub output_history: VecDeque<f64>,
     /// One history per logical core, drawn inside that core's table cell.
     pub core_history: Vec<VecDeque<f64>>,
@@ -37,6 +43,7 @@ pub struct DashboardState {
     prev_cache_write: Option<u64>,
     prev_cache_at: Option<i64>,
 
+    prev_volume_device: Option<String>,
     prev_volume_read: Option<u64>,
     prev_volume_write: Option<u64>,
     prev_volume_at: Option<i64>,
@@ -134,6 +141,16 @@ impl DashboardState {
                 return (None, None);
             }
         };
+        if self.prev_volume_device.as_deref() != Some(volume.device.as_str()) {
+            self.prev_volume_device = Some(volume.device.clone());
+            self.prev_volume_read = None;
+            self.prev_volume_write = None;
+            self.prev_volume_at = None;
+            self.volume_read_history.clear();
+            self.volume_write_history.clear();
+            self.volume_session_read_bytes = None;
+            self.volume_session_write_bytes = None;
+        }
         let (read, written) = match (volume.read_bytes, volume.write_bytes) {
             (Some(read), Some(written)) => (read, written),
             _ => {
@@ -143,15 +160,36 @@ impl DashboardState {
                 return (None, None);
             }
         };
+        // A valid pair starts the session, even if its counters are zero.
+        self.volume_session_read_bytes.get_or_insert(0);
+        self.volume_session_write_bytes.get_or_insert(0);
         let elapsed = self.prev_volume_at.map(|before| now - before).unwrap_or(0);
         let rates = match (self.prev_volume_read, self.prev_volume_write) {
             (Some(prev_read), Some(prev_write))
-                if elapsed > 0 && read >= prev_read && written >= prev_write =>
+                if read >= prev_read && written >= prev_write =>
             {
-                (
-                    Some((read - prev_read) as f64 / MIB / elapsed as f64),
-                    Some((written - prev_write) as f64 / MIB / elapsed as f64),
-                )
+                // Totals need consecutive monotonic counters, but not a
+                // positive elapsed time; the latter is only needed for rates.
+                let read_delta = read - prev_read;
+                let write_delta = written - prev_write;
+                self.volume_session_read_bytes = Some(
+                    self.volume_session_read_bytes
+                        .unwrap_or(0)
+                        .saturating_add(read_delta),
+                );
+                self.volume_session_write_bytes = Some(
+                    self.volume_session_write_bytes
+                        .unwrap_or(0)
+                        .saturating_add(write_delta),
+                );
+                if elapsed > 0 {
+                    (
+                        Some(read_delta as f64 / MIB / elapsed as f64),
+                        Some(write_delta as f64 / MIB / elapsed as f64),
+                    )
+                } else {
+                    (None, None)
+                }
             }
             _ => (None, None),
         };
@@ -228,14 +266,24 @@ impl DashboardState {
                 SWAP_HISTORY_CAP,
             );
         }
-        if let Some(rate) = swap_out {
-            push(&mut self.swap_out_history, rate, HISTORY_CAP);
+        if let Some(bytes) = sample.compressed_bytes {
+            push(
+                &mut self.compressed_history,
+                bytes as f64 / 1073741824.0,
+                HISTORY_CAP,
+            );
         }
         if let Some(rate) = cache_read {
             push(&mut self.cache_read_history, rate, HISTORY_CAP);
         }
         if let Some(rate) = cache_write {
             push(&mut self.cache_write_history, rate, HISTORY_CAP);
+        }
+        if let Some(rate) = volume_read {
+            push(&mut self.volume_read_history, rate, HISTORY_CAP);
+        }
+        if let Some(rate) = volume_write {
+            push(&mut self.volume_write_history, rate, HISTORY_CAP);
         }
         if let Some(rate) = output {
             push(&mut self.output_history, rate, HISTORY_CAP);

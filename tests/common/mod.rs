@@ -148,6 +148,8 @@ pub const FIXTURE_SAMPLE: &str = r#"{
   "gpu_active_ratio": 0.62,
   "gpu_temp": 58.4,
   "gpu_power_w": 12.7,
+  "compressed_bytes": 3221225472,
+  "wired_bytes": 5368709120,
   "swap_used_bytes": 7279969567,
   "swap_in_pages": 100,
   "swap_out_pages": 200,

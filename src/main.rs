@@ -280,6 +280,8 @@ fn run_json(options: &cli::Options) {
         "gpu_active_ratio": sample.gpu_active_ratio.map(round3),
         "gpu_temp_avg": sample.gpu_temp.map(round3),
         "gpu_power": sample.gpu_power_w.map(round3),
+        "compressed_bytes": sample.compressed_bytes,
+        "wired_bytes": sample.wired_bytes,
         "swap_used_bytes": sample.swap_used_bytes,
         "swap_in_pages": sample.swap_in_pages,
         "swap_out_pages": sample.swap_out_pages,

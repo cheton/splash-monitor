@@ -21,6 +21,10 @@ pub struct SystemSample {
     pub gpu_active_ratio: Option<f64>,
     pub gpu_temp: Option<f64>,
     pub gpu_power_w: Option<f64>,
+    /// Physical bytes occupied by the compressor.
+    pub compressed_bytes: Option<u64>,
+    /// Wired, non-pageable physical bytes.
+    pub wired_bytes: Option<u64>,
     pub swap_used_bytes: Option<u64>,
     /// Lifetime page counters, not rates: the dashboard derives rates from
     /// two samples.
@@ -113,6 +117,8 @@ impl SystemProbe for FixtureProbe {
             gpu_active_ratio: ratio("gpu_active_ratio"),
             gpu_temp: ratio("gpu_temp"),
             gpu_power_w: ratio("gpu_power_w"),
+            compressed_bytes: integer("compressed_bytes"),
+            wired_bytes: integer("wired_bytes"),
             swap_used_bytes: integer("swap_used_bytes"),
             swap_in_pages: integer("swap_in_pages"),
             swap_out_pages: integer("swap_out_pages"),
@@ -133,6 +139,8 @@ impl SystemProbe for FixtureProbe {
             && sample.gpu_active_ratio.is_none()
             && sample.gpu_temp.is_none()
             && sample.gpu_power_w.is_none()
+            && sample.compressed_bytes.is_none()
+            && sample.wired_bytes.is_none()
             && sample.swap_used_bytes.is_none()
             && sample.free_percent.is_none();
         sample

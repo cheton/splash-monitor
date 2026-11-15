@@ -117,6 +117,14 @@ fn str_or_dash(root: &Value, steps: &[&str]) -> String {
     }
 }
 
+/// Preserve false for cache flags; only absent or null values are missing.
+fn flag_or_dash(root: &Value, steps: &[&str]) -> String {
+    match path(root, steps) {
+        None | Some(Value::Null) => MISSING.to_string(),
+        value => to_display_text(value),
+    }
+}
+
 /// Text conversion used by the previous dashboard: `null` becomes the literal
 /// text `null`.
 fn to_display_text(value: Option<&Value>) -> String {
@@ -219,8 +227,8 @@ pub fn parse_status(body: Option<&str>) -> SplashView {
         cache_capacity: u64_or(&root, &["disk", "capacity_bytes"], 0),
         cache_limit: u64_or(&root, &["disk", "limit_bytes"], 0),
         cache_volume_free: u64_or(&root, &["disk", "volume_available_bytes"], 0),
-        cache_writes_gated: str_or_dash(&root, &["disk", "writes_gated"]),
-        cache_persistent: str_or_dash(&root, &["disk", "persistent"]),
+        cache_writes_gated: flag_or_dash(&root, &["disk", "writes_gated"]),
+        cache_persistent: flag_or_dash(&root, &["disk", "persistent"]),
         disk_read_total: opt_u64(&root, &["disk", "read_bytes"]),
         disk_written_total: opt_u64(&root, &["disk", "written_bytes"]),
         decode_tokens_total: opt_u64(&root, &["metrics", "decode_output_tokens"]),

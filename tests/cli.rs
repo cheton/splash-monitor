@@ -5,6 +5,7 @@ mod common;
 
 use common::{TestServer, TmpDir, BASE_STATUS, FIXTURE_SAMPLE, GATEWAY_STATS};
 use splash_monitor::cli;
+use splash_monitor::system::{FixtureProbe, SystemProbe};
 use splash_monitor::theme::Mode;
 
 fn no_env(_: &str) -> Option<String> {
@@ -373,6 +374,49 @@ fn flags_set_the_expected_options() {
 }
 
 #[test]
+fn cache_dir_default_and_precedence() {
+    // No flag and no variable: the path falls back to $TMPDIR, which is where
+    // the engine keeps its cache temp files.
+    let options = parse_with(&[], &[("TMPDIR", "/var/folders/xx/T")]).expect("parse");
+    assert_eq!(
+        options.cache_dir.as_deref(),
+        Some(std::path::Path::new("/var/folders/xx/T"))
+    );
+
+    let options = parse_with(
+        &[],
+        &[
+            ("TMPDIR", "/var/folders/xx/T"),
+            ("SPLASH_CACHE_DIR", "/tmp/env"),
+        ],
+    )
+    .expect("parse");
+    assert_eq!(
+        options.cache_dir.as_deref(),
+        Some(std::path::Path::new("/tmp/env"))
+    );
+
+    let options = parse_with(
+        &["--cache-dir", "/Volumes/Drive/cache"],
+        &[
+            ("TMPDIR", "/var/folders/xx/T"),
+            ("SPLASH_CACHE_DIR", "/tmp/env"),
+        ],
+    )
+    .expect("parse");
+    assert_eq!(
+        options.cache_dir.as_deref(),
+        Some(std::path::Path::new("/Volumes/Drive/cache"))
+    );
+
+    // An empty variable is absent, and with nothing set there is no path to
+    // resolve a volume from.
+    let options = parse_with(&[], &[("TMPDIR", "")]).expect("parse");
+    assert!(options.cache_dir.is_none());
+    assert!(parse(&[]).expect("parse").cache_dir.is_none());
+}
+
+#[test]
 fn help_exits_zero_without_a_terminal() {
     let output = common::run_binary(&["--help"], &[]);
     let (code, stdout, stderr) = common::codes(&output);
@@ -451,6 +495,8 @@ fn once_and_json_work_in_a_pipe() {
         "gpu_active_ratio",
         "gpu_temp_avg",
         "gpu_power",
+        "compressed_bytes",
+        "wired_bytes",
         "swap_used_bytes",
         "swap_in_pages",
         "swap_out_pages",
@@ -461,7 +507,126 @@ fn once_and_json_work_in_a_pipe() {
         assert!(value.get(key).is_some(), "missing key {key}");
     }
     assert_eq!(value["cpu_core_temps"].as_array().expect("temps").len(), 14);
+    assert_eq!(value["compressed_bytes"].as_u64(), Some(3_221_225_472));
+    assert_eq!(value["wired_bytes"].as_u64(), Some(5_368_709_120));
     assert_eq!(value["page_size"].as_u64(), Some(16384));
+}
+
+#[test]
+fn fixture_memory_gauges_preserve_partial_unsigned_values() {
+    // Each case contains no other telemetry, so the probe's unavailable flag
+    // also exercises either new gauge independently.
+    let cases = [
+        (
+            "zero",
+            r#"{"compressed_bytes":0,"wired_bytes":0}"#,
+            Some(0),
+            Some(0),
+            "Compressed 0.00 GiB | Wired 0.00 GiB",
+        ),
+        (
+            "compressed-only",
+            r#"{"compressed_bytes":3221225472,"page_size":4096}"#,
+            Some(3_221_225_472),
+            None,
+            "Compressed 3.00 GiB | Wired -- GiB",
+        ),
+        (
+            "wired-only",
+            r#"{"wired_bytes":5368709120,"page_size":4096}"#,
+            None,
+            Some(5_368_709_120),
+            "Compressed -- GiB | Wired 5.00 GiB",
+        ),
+        (
+            "absent",
+            r#"{}"#,
+            None,
+            None,
+            "Compressed -- GiB | Wired -- GiB",
+        ),
+        (
+            "null",
+            r#"{"compressed_bytes":null,"wired_bytes":null}"#,
+            None,
+            None,
+            "Compressed -- GiB | Wired -- GiB",
+        ),
+        (
+            "negative",
+            r#"{"compressed_bytes":-1,"wired_bytes":-1}"#,
+            None,
+            None,
+            "Compressed -- GiB | Wired -- GiB",
+        ),
+        (
+            "fractional",
+            r#"{"compressed_bytes":1.5,"wired_bytes":1.5}"#,
+            None,
+            None,
+            "Compressed -- GiB | Wired -- GiB",
+        ),
+        (
+            "string",
+            r#"{"compressed_bytes":"1","wired_bytes":"1"}"#,
+            None,
+            None,
+            "Compressed -- GiB | Wired -- GiB",
+        ),
+    ];
+    let server = TestServer::start(BASE_STATUS);
+    let dir = TmpDir::new("cli-memory-values");
+
+    for (name, contents, compressed, wired, display) in cases {
+        let fixture = common::write_fixture(dir.path(), &format!("{name}.json"), contents);
+        let sample = FixtureProbe::new(&fixture).sample();
+        assert_eq!(sample.compressed_bytes, compressed, "{name}");
+        assert_eq!(sample.wired_bytes, wired, "{name}");
+        assert_eq!(
+            sample.telemetry_unavailable,
+            compressed.is_none() && wired.is_none(),
+            "{name}"
+        );
+
+        let fixture = fixture.to_str().expect("fixture path");
+        for online in [true, false] {
+            let url = if online {
+                server.url.as_str()
+            } else {
+                "http://127.0.0.1:1"
+            };
+            let output = common::run_binary(
+                &["--once", "--no-color", "--no-sensors", "--fixtures", fixture, "--url", url],
+                &[("COLUMNS", "100"), ("LINES", "30")],
+            );
+            let (code, stdout, stderr) = common::codes(&output);
+            assert_eq!(code, 0, "{name}, online={online}: {stderr}");
+            let screen = common::grid_rows(&stdout, 100, 30).join("\n");
+            assert!(
+                screen.contains(if online { "STANDBY" } else { "OFFLINE" }),
+                "{name}, online={online}:\n{screen}"
+            );
+            assert!(screen.contains(display), "{name}, online={online}:\n{screen}");
+
+            let output = common::run_binary(
+                &["--json", "--no-sensors", "--fixtures", fixture, "--url", url],
+                &[],
+            );
+            let (code, stdout, stderr) = common::codes(&output);
+            assert_eq!(code, 0, "{name}, online={online}: {stderr}");
+            let value: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json sample");
+            assert_eq!(
+                value.get("compressed_bytes"),
+                Some(&serde_json::json!(compressed)),
+                "{name}, online={online}: {value}"
+            );
+            assert_eq!(
+                value.get("wired_bytes"),
+                Some(&serde_json::json!(wired)),
+                "{name}, online={online}: {value}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -634,7 +799,15 @@ fn once_keeps_splash_and_local_readings_separate() {
         let metal = if online { "41.02/42.00" } else { "--/--" };
         let thermal = if online { "nominal" } else { "--" };
 
-        for (cols, rows) in [(100usize, 30usize), (72, 20), (36, 10)] {
+        for (cols, rows) in [
+            (100usize, 30usize),
+            (140, 42),
+            (66, 24),
+            (86, 27),
+            (66, 20),
+            (72, 20),
+            (36, 10),
+        ] {
             let columns = cols.to_string();
             let lines = rows.to_string();
             let output = common::run_binary(
@@ -650,41 +823,69 @@ fn once_keeps_splash_and_local_readings_separate() {
             let visible = common::grid_rows(&stdout, cols, rows);
             let screen = visible.join("\n");
 
-            if cols == 100 {
+            if cols >= 100 && rows >= 30 {
                 let width = cols - 2;
-                let left_width = (width - 2) / 2;
+                let right_width = (width - 2) / 2;
+                let left_width = width - 2 - right_width;
                 let right_x = 2 + left_width + 2;
-                let right_width = width - left_width - 2;
                 let header = panel(&visible, 2, width, "SPLASH MONITOR");
                 let inference = panel(&visible, 2, left_width, "[SPLASH] INFERENCE / REQUESTS");
-                let hardware = panel(&visible, right_x, right_width, "[LOCAL] CPU / GPU");
+                let server_memory = panel(&visible, 2, left_width, "[SPLASH] MEMORY / CONFIG");
                 let cache = panel(&visible, 2, left_width, "[SPLASH] CACHE / KV SPILL");
-                let pressure = panel(&visible, right_x, right_width, "[LOCAL] PRESSURE / SWAP");
-                let footer = panel(&visible, 2, width, "[SPLASH] MEMORY / CONFIG");
+                let hardware = panel(&visible, right_x, right_width, "[LOCAL] CPU / GPU");
+                let local_memory = panel(&visible, right_x, right_width, "[LOCAL] MEMORY");
+                let disk = panel(&visible, right_x, right_width, "[LOCAL] DISK I/O");
 
                 assert!(header.contains(if online { "STANDBY" } else { "OFFLINE" }), "{header}");
                 assert!(inference.contains(&format!("Thermal {thermal}")), "{inference}");
                 assert!(cache.contains(if online { "KV Spill 278" } else { "KV Spill --" }), "{cache}");
                 if online {
                     assert!(cache.contains("Hits 342"), "{cache}");
+                    assert!(cache.contains("persist false | gate false"), "{cache}");
                 }
-                assert!(footer.contains(&format!("Metal {metal} GiB")), "{footer}");
+                assert!(server_memory.contains(&format!("Metal {metal} GiB")), "{server_memory}");
+                assert!(
+                    server_memory.contains(if online {
+                        "Context 262144 | RAM bound 139257"
+                    } else {
+                        "Context -- | RAM bound --"
+                    }),
+                    "{server_memory}"
+                );
+                assert!(server_memory.contains(if online { "Weights released true" } else { "Weights released --" }), "{server_memory}");
                 assert!(hardware.contains("62.0%") && hardware.contains("14.8%"), "{hardware}");
-                assert!(pressure.contains("WARNING") && pressure.contains("Free 30%"), "{pressure}");
-                assert!(pressure.contains("Swap 6.78 GiB"), "{pressure}");
-                assert!(pressure.contains("Device disk3 (all processes)"), "{pressure}");
+                assert!(local_memory.contains("Pressure WARNING | Free index 30%"), "{local_memory}");
+                assert!(local_memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"), "{local_memory}");
+                assert!(local_memory.contains("Swap used 6.78 GiB"), "{local_memory}");
+                assert!(local_memory.contains("IN -- MiB/s") && local_memory.contains("OUT -- MiB/s"), "{local_memory}");
+                assert!(disk.contains("Device disk3 (all processes)"), "{disk}");
+                assert!(disk.contains("Read -- MiB/s") && disk.contains("Write -- MiB/s"), "{disk}");
 
-                for splash in [&inference, &cache, &footer] {
-                    for local in ["62.0%", "14.8%", "6.78 GiB", "WARNING", "disk3"] {
+                for splash in [&inference, &server_memory, &cache] {
+                    for local in [
+                        "62.0%", "14.8%", "6.78 GiB", "WARNING", "Free index",
+                        "Compressed", "Wired", "disk3", "Device", "all processes",
+                    ] {
                         assert!(!splash.contains(local), "local {local:?} in Splash panel:\n{splash}");
                     }
                 }
-                for local in [&hardware, &pressure] {
-                    for splash in ["Thermal", "nominal", "Metal", "41.02/42.00", "1048576", "KV Spill", "Hits 342"] {
+                for local in [&hardware, &local_memory, &disk] {
+                    for splash in [
+                        "[SPLASH]", "Thermal", "nominal", "Metal", "41.02/42.00",
+                        "Weights released", "RAM bound", "Cache quota", "KV cap",
+                        "1048576", "KV Spill", "Hits 342",
+                    ] {
                         assert!(!local.contains(splash), "Splash {splash:?} in local panel:\n{local}");
                     }
                 }
-            } else if cols == 72 {
+                for other_local in [&hardware, &local_memory] {
+                    for device in ["Device", "disk3", "all processes"] {
+                        assert!(!other_local.contains(device), "disk {device:?} outside Disk I/O:\n{other_local}");
+                    }
+                }
+                assert!(!hardware.contains("Compressed") && !hardware.contains("Wired"), "{hardware}");
+                assert!(!disk.contains("Compressed") && !disk.contains("Wired"), "{disk}");
+            } else if cols >= 66 {
                 let width = cols - 2;
                 let left_width = (width - 2) / 2;
                 let right_x = 2 + left_width + 2;
@@ -692,7 +893,7 @@ fn once_keeps_splash_and_local_readings_separate() {
                 let status = panel(&visible, 2, left_width, "[SPLASH] STATUS");
                 let hardware = panel(&visible, right_x, right_width, "[LOCAL] CPU / GPU");
                 let activity = panel(&visible, 2, width, "[SPLASH] ACTIVITY");
-                let pressure = panel(&visible, 2, width, "[LOCAL] PRESSURE / SWAP");
+                let local_memory = panel(&visible, 2, width, "[LOCAL] MEMORY");
                 let spill = panel(&visible, 2, width, "[SPLASH] KV SPILL");
 
                 assert!(status.contains(if online { "ONLINE" } else { "OFFLINE" }), "{status}");
@@ -700,19 +901,31 @@ fn once_keeps_splash_and_local_readings_separate() {
                 assert!(activity.contains(&format!("{metal} GiB")), "{activity}");
                 assert!(spill.contains(if online { "Pages 1048576" } else { "Pages --" }), "{spill}");
                 assert!(hardware.contains("GPU 62.0%") && hardware.contains("CPU 14.8%"), "{hardware}");
-                assert!(pressure.contains("WARNING") && pressure.contains("Swap 6.78 GiB"), "{pressure}");
+                assert!(local_memory.contains("WARNING") && local_memory.contains("Swap 6.78 GiB"), "{local_memory}");
+                assert!(local_memory.contains("Free index 30%") && local_memory.contains("Swap history"), "{local_memory}");
+                if rows >= 24 {
+                    assert!(local_memory.contains("Compressed 3.00 GiB | Wired 5.00 GiB"), "{local_memory}");
+                } else {
+                    assert!(!local_memory.contains("Compressed") && !local_memory.contains("Wired"), "{local_memory}");
+                }
+                assert!(!screen.contains("[LOCAL] DISK I/O") && !screen.contains("disk3") && !screen.contains("all processes"), "{screen}");
 
                 for splash in [&status, &activity, &spill] {
-                    for local in ["62.0%", "14.8%", "6.78 GiB", "WARNING", "disk3"] {
+                    for local in [
+                        "62.0%", "14.8%", "6.78 GiB", "WARNING", "Free index",
+                        "Compressed", "Wired", "disk3", "Device", "all processes",
+                    ] {
                         assert!(!splash.contains(local), "local {local:?} in Splash panel:\n{splash}");
                     }
                 }
-                for local in [&hardware, &pressure] {
-                    for splash in ["Thermal", "nominal", "Metal", "41.02/42.00", "1048576", "KV "] {
+                for local in [&hardware, &local_memory] {
+                    for splash in ["[SPLASH]", "Thermal", "nominal", "Metal", "41.02/42.00", "1048576", "KV "] {
                         assert!(!local.contains(splash), "Splash {splash:?} in local panel:\n{local}");
                     }
                 }
             } else {
+                assert!(!screen.contains("[LOCAL] DISK I/O") && !screen.contains("disk3"), "{screen}");
+                assert!(!screen.contains("Compressed") && !screen.contains("Wired"), "{screen}");
                 assert!(
                     visible.iter().any(|row| row == &format!("[SPLASH] Metal {metal} GiB")),
                     "{screen}"
@@ -731,5 +944,5 @@ fn once_keeps_splash_and_local_readings_separate() {
         }
     }
 
-    assert_eq!(server.paths(), vec!["/status"; 3]);
+    assert_eq!(server.paths(), vec!["/status"; 7]);
 }
