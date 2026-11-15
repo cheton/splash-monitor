@@ -761,3 +761,44 @@ fn missing_local_probes_do_not_erase_splash_data() {
         }
     }
 }
+
+#[test]
+fn gateway_frame_labels_the_source_not_offline() {
+    let harness = common::Harness::gateway(Some(common::GATEWAY_STATS), sample_fixture());
+    let text = harness.visible_text(140, 42);
+    assert!(
+        text.contains("GATEWAY"),
+        "missing source label in full layout"
+    );
+    assert!(!text.contains("OFFLINE"), "gateway frame looked offline");
+    assert!(text.contains("111.4"), "engine avg missing in full layout");
+
+    let harness = common::Harness::gateway(Some(common::GATEWAY_STATS), sample_fixture());
+    let text = harness.visible_text(80, 24);
+    assert!(
+        text.contains("GATEWAY"),
+        "missing source label in compact layout"
+    );
+    assert!(
+        !text.contains("OFFLINE"),
+        "compact gateway frame looked offline"
+    );
+}
+
+#[test]
+fn gateway_readings_keep_their_source_labels_at_all_sizes() {
+    let harness = common::Harness::gateway(Some(common::GATEWAY_STATS), sample_fixture());
+    for (cols, height, expected) in [
+        (140, 42, vec!["[GATEWAY] INFERENCE / REQUESTS", "[GATEWAY] CACHE / KV SPILL", "[GATEWAY] MEMORY / CONFIG"]),
+        (80, 24, vec!["[GATEWAY] STATUS", "[GATEWAY] ACTIVITY", "[GATEWAY] KV SPILL"]),
+        (64, 15, vec!["[GATEWAY] ACTIVITY"]),
+        (36, 10, vec!["[GATEWAY] Metal", "[GATEWAY] ONLINE"]),
+    ] {
+        let text = harness.visible_text(cols, height);
+        for label in expected {
+            assert!(text.contains(label), "{label} missing at {cols}x{height}: {text}");
+        }
+        assert!(!text.contains("[SPLASH]"), "{cols}x{height}: {text}");
+        assert!(text.contains("[LOCAL]"), "{cols}x{height}: {text}");
+    }
+}

@@ -2,8 +2,10 @@
 
 mod common;
 
-use common::BASE_STATUS;
-use splash_monitor::status::{format_metric, model_suffix, num_gib, num_gib3, parse_status};
+use common::{BASE_STATUS, GATEWAY_STATS};
+use splash_monitor::status::{
+    format_metric, model_suffix, num_gib, num_gib3, parse_gateway_stats, parse_status,
+};
 
 #[test]
 fn failed_or_malformed_body_is_offline() {
@@ -162,4 +164,73 @@ fn baseline_fixture_maps_the_displayed_fields() {
     assert_eq!(view.display().limit_gib, "42.00");
     assert_eq!(view.display().prefill_tps, "867.1");
     assert_eq!(view.display().ttft_p95, "11244.8");
+}
+
+#[test]
+fn gateway_failed_body_is_offline() {
+    for body in [
+        None,
+        Some(""),
+        Some("not json at all"),
+        Some("[]"),
+        Some("null"),
+    ] {
+        let view = parse_gateway_stats(body);
+        assert!(!view.online, "body {body:?} looked online");
+        assert!(!view.gateway, "body {body:?} claimed the fallback");
+    }
+}
+
+#[test]
+fn gateway_stats_map_the_console_counters() {
+    let view = parse_gateway_stats(Some(GATEWAY_STATS));
+    assert!(view.online);
+    assert!(view.gateway);
+    assert_eq!(view.decode_tokens_total, Some(113514));
+    assert_eq!(view.decode_rate, Some(111.4));
+    assert_eq!(view.prefill_tps, Some(1623.6));
+    assert_eq!(view.active, 1);
+    assert_eq!(view.scheduler_queued, 2);
+    assert_eq!(view.scheduler_prefill, 0);
+    assert_eq!(view.scheduler_decode, 1);
+    assert_eq!(view.phase, "decoding");
+    assert_eq!(view.cache_hits, Some(162));
+    assert_eq!(view.disk_restores, Some(735));
+    assert_eq!(view.disk_hit_tokens, Some(23520));
+    assert!(view.disk_present);
+    assert_eq!(view.cache_used, 9292677120);
+    assert_eq!(view.cache_limit, 63993282560);
+    assert_eq!(view.metal_current, 83192376848);
+    assert_eq!(view.metal_limit, 115974014416);
+    assert_eq!(view.memory_headroom, Some(110175313695 - 83192376848));
+    // Engine-only fields stay missing: no transferred bytes, no percentiles.
+    assert_eq!(view.disk_read_total, None);
+    assert_eq!(view.disk_written_total, None);
+    assert_eq!(view.ttft_p95, None);
+    assert_eq!(view.gap_p95, None);
+
+    let display = view.display();
+    assert_eq!(display.model, "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S");
+    assert_eq!(display.decode_rate, "111.4");
+    assert_eq!(display.prefill_tps, "1623.6");
+    assert_eq!(display.ttft_p95, "--");
+    assert_eq!(display.disk_read_gib, "--");
+    assert_eq!(display.cache_used_gib, "8.65");
+    // Engine-only fields must not render as a claimed zero.
+    assert_eq!(display.spill_requests, "--");
+    assert_eq!(display.kv_capacity, "--");
+    assert_eq!(display.context_window, "--");
+    assert_eq!(display.resident, "--");
+}
+
+#[test]
+fn gateway_payload_without_cache_model_keeps_cache_lines_empty() {
+    let view = parse_gateway_stats(Some(r#"{"total_completion_tokens": 5}"#));
+    assert!(view.online);
+    assert!(view.gateway);
+    assert!(!view.disk_present);
+    assert_eq!(view.cache_hits, None);
+    assert_eq!(view.model, "--");
+    assert_eq!(view.memory_headroom, None);
+    assert_eq!(view.decode_tokens_total, Some(5));
 }

@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{TestServer, TmpDir, BASE_STATUS, FIXTURE_SAMPLE};
+use common::{TestServer, TmpDir, BASE_STATUS, FIXTURE_SAMPLE, GATEWAY_STATS};
 use splash_monitor::cli;
 use splash_monitor::theme::Mode;
 
@@ -109,6 +109,8 @@ fn missing_option_value_shows_usage() {
         "--cache-dir",
         "--fixtures",
         "--theme",
+        "--gateway",
+        "--gateway-key",
         "--api-key",
     ] {
         let error = parse(&[flag]).expect_err("expected a CLI error");
@@ -177,6 +179,102 @@ fn url_precedence() {
     assert_eq!(options.base_url, "http://127.0.0.1:20001");
 
     assert_eq!(parse(&[]).expect("parse").base_url, cli::DEFAULT_URL);
+}
+
+#[test]
+fn gateway_fallback_option_and_environment() {
+    let options = parse(&[]).expect("parse");
+    assert!(options.gateway_url.is_none());
+    assert!(options.gateway_key.is_none());
+
+    assert_eq!(
+        parse(&["--gateway", "http://gw.example:9000/"])
+            .expect("parse")
+            .gateway_url
+            .as_deref(),
+        Some("http://gw.example:9000"),
+        "the trailing slash must be stripped like --url"
+    );
+
+    // A key without a URL turns the fallback on at the oMLX default port.
+    let options = parse(&["--gateway-key", "secret"]).expect("parse");
+    assert_eq!(options.gateway_key.as_deref(), Some("secret"));
+    assert_eq!(
+        options.gateway_url.as_deref(),
+        Some("http://127.0.0.1:8000")
+    );
+
+    let options = parse_with(
+        &["--gateway", "http://cli.example:9000"],
+        &[("SPLASH_GATEWAY_URL", "http://env.example:9001")],
+    )
+    .expect("parse");
+    assert_eq!(
+        options.gateway_url.as_deref(),
+        Some("http://cli.example:9000")
+    );
+
+    let options = parse_with(&[], &[("SPLASH_GATEWAY_API_KEY", "env-secret")]).expect("parse");
+    assert_eq!(options.gateway_key.as_deref(), Some("env-secret"));
+    assert_eq!(
+        options.gateway_url.as_deref(),
+        Some("http://127.0.0.1:8000")
+    );
+}
+
+#[test]
+fn gateway_fallback_answers_when_the_engine_is_unreachable() {
+    let gateway = TestServer::start(GATEWAY_STATS);
+    let output = common::run_binary(
+        &[
+            "--once",
+            "--no-color",
+            "--no-sensors",
+            "--url",
+            "http://127.0.0.1:1",
+            "--gateway",
+            gateway.url.as_str(),
+        ],
+        &[],
+    );
+    let (code, stdout, _) = common::codes(&output);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("GATEWAY"), "missing source label: {stdout}");
+    assert!(stdout.contains("111.4"), "engine avg missing: {stdout}");
+    assert!(
+        !stdout.contains("OFFLINE"),
+        "frame stayed offline: {stdout}"
+    );
+    assert_eq!(gateway.paths(), vec!["/admin/api/stats".to_string()]);
+}
+
+#[test]
+fn gateway_is_quiet_when_the_engine_answers() {
+    let engine = TestServer::start(BASE_STATUS);
+    let gateway = TestServer::start(GATEWAY_STATS);
+    let output = common::run_binary(
+        &[
+            "--once",
+            "--no-color",
+            "--no-sensors",
+            "--url",
+            engine.url.as_str(),
+            "--gateway",
+            gateway.url.as_str(),
+        ],
+        &[],
+    );
+    let (code, stdout, _) = common::codes(&output);
+    assert_eq!(code, 0);
+    assert!(
+        !stdout.contains("GATEWAY"),
+        "fallback used anyway: {stdout}"
+    );
+    assert!(
+        gateway.paths().is_empty(),
+        "gateway polled: {:?}",
+        gateway.paths()
+    );
 }
 
 #[test]

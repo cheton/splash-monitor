@@ -150,7 +150,19 @@ fn collect_frame(
         &options.base_url,
         options.api_key.as_deref(),
     );
-    let view = status::parse_status(body.as_deref());
+    let mut view = status::parse_status(body.as_deref());
+    // With `--gateway`, an unreachable engine falls back to the oMLX gateway
+    // stats the web console renders. Engine-only fields stay `--` there.
+    if !view.online {
+        if let Some(gateway) = &options.gateway_url {
+            let stats = http::fetch_gateway_stats(
+                &dashboard.agent,
+                gateway,
+                options.gateway_key.as_deref(),
+            );
+            view = status::parse_gateway_stats(stats.as_deref());
+        }
+    }
     let sample = probe.sample();
     let rates = dashboard.state.update_frame(&view, &sample, now);
     (view, sample, rates, now)

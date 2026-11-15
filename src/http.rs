@@ -27,3 +27,25 @@ pub fn fetch_status(agent: &ureq::Agent, base_url: &str, api_key: Option<&str>) 
     let bytes = response.body_mut().read_to_vec().ok()?;
     String::from_utf8(bytes).ok()
 }
+
+/// `GET {base_url}/admin/api/stats` on the oMLX gateway. Same failure rule as
+/// `fetch_status`: transport errors and non-2xx answers mean no fallback data.
+/// The gateway requires its own Bearer key (`auth.api_key` in
+/// `~/.omlx/settings.json`) whenever authentication is on.
+pub fn fetch_gateway_stats(
+    agent: &ureq::Agent,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Option<String> {
+    let url = format!("{base_url}/admin/api/stats");
+    let mut request = agent.get(url);
+    if let Some(key) = api_key {
+        request = request.header("Authorization", format!("Bearer {key}"));
+    }
+    let mut response = request.call().ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let bytes = response.body_mut().read_to_vec().ok()?;
+    String::from_utf8(bytes).ok()
+}

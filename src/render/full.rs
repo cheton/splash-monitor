@@ -104,6 +104,8 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     draw_box(grid, theme, x, 1, w, 3, "SPLASH MONITOR");
     let (label, label_color) = if !frame.view.online {
         ("● OFFLINE", theme.critical)
+    } else if frame.view.gateway {
+        ("● GATEWAY", theme.data)
     } else if frame.view.active > 0 {
         ("● RUNNING", theme.good)
     } else if frame.view.released == "true" {
@@ -127,7 +129,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     render_cache(grid, frame, theme, x, bottom, lw, graphw, bh);
     render_pressure(grid, frame, theme, rx, bottom, rw, graphw2, bh);
 
-    draw_box(grid, theme, x, footer, w, 4, "[SPLASH] MEMORY / CONFIG");
+    let title = if frame.view.gateway {
+        "[GATEWAY] MEMORY / CONFIG"
+    } else {
+        "[SPLASH] MEMORY / CONFIG"
+    };
+    draw_box(grid, theme, x, footer, w, 4, title);
     grid.at(
         x + 2,
         footer + 1,
@@ -173,7 +180,12 @@ fn render_inference(
     gheight: usize,
     top_h: usize,
 ) {
-    draw_box(grid, theme, x, top, lw, top_h, "[SPLASH] INFERENCE / REQUESTS");
+    let title = if frame.view.gateway {
+        "[GATEWAY] INFERENCE / REQUESTS"
+    } else {
+        "[SPLASH] INFERENCE / REQUESTS"
+    };
+    draw_box(grid, theme, x, top, lw, top_h, title);
     grid.at(
         x + 2,
         top + 1,
@@ -622,7 +634,12 @@ fn render_cache(
     graphw: usize,
     bh: usize,
 ) {
-    draw_box(grid, theme, x, bottom, lw, bh, "[SPLASH] CACHE / KV SPILL");
+    let title = if frame.view.gateway {
+        "[GATEWAY] CACHE / KV SPILL"
+    } else {
+        "[SPLASH] CACHE / KV SPILL"
+    };
+    draw_box(grid, theme, x, bottom, lw, bh, title);
     grid.at(
         x + 2,
         bottom + 1,

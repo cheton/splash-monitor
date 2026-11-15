@@ -9,6 +9,11 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     let rows = grid.rows;
     let x = 2usize;
     let w = cols.saturating_sub(2);
+    let source = if frame.view.gateway {
+        "GATEWAY"
+    } else {
+        "SPLASH"
+    };
 
     if w < 24 || rows < 12 {
         grid.at(1, 1, Some(theme.data), "SPLASH MONITOR  |  q: quit", cols);
@@ -17,7 +22,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             2,
             Some(theme.text),
             &format!(
-                "[SPLASH] Metal {}/{} GiB",
+                "[{source}] Metal {}/{} GiB",
                 frame.display.metal_gib, frame.display.limit_gib
             ),
             cols,
@@ -40,7 +45,9 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             ),
             cols,
         );
-        let (label, label_color) = if frame.view.online {
+        let (label, label_color) = if frame.view.gateway {
+            ("[GATEWAY] ONLINE", theme.data)
+        } else if frame.view.online {
             ("[SPLASH] ONLINE", theme.good)
         } else {
             ("[SPLASH] OFFLINE", theme.critical)
@@ -72,10 +79,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     }
 
     draw_box(grid, theme, x, 1, w, header_h, "SPLASH MONITOR");
-    let (label, label_color) = if frame.view.online {
-        ("● LIVE", theme.good)
-    } else {
+    let (label, label_color) = if !frame.view.online {
         ("● OFFLINE", theme.critical)
+    } else if frame.view.gateway {
+        ("● GATEWAY", theme.data)
+    } else {
+        ("● LIVE", theme.good)
     };
     grid.at(x + 2, 2, Some(label_color), label, 999);
     if cols >= 86 {
@@ -113,13 +122,20 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
         let leftw = (w - 2) / 2;
         let rightx = x + leftw + 2;
         let rightw = w - leftw - 2;
-        draw_box(grid, theme, x, start, leftw, th, "[SPLASH] STATUS");
+        let title = if frame.view.gateway {
+            "[GATEWAY] STATUS"
+        } else {
+            "[SPLASH] STATUS"
+        };
+        draw_box(grid, theme, x, start, leftw, th, title);
         draw_box(grid, theme, rightx, start, rightw, th, "[LOCAL] CPU / GPU");
 
-        let (label, label_color) = if frame.view.online {
-            ("● ONLINE", theme.good)
-        } else {
+        let (label, label_color) = if !frame.view.online {
             ("● OFFLINE", theme.critical)
+        } else if frame.view.gateway {
+            ("● GATEWAY", theme.data)
+        } else {
+            ("● ONLINE", theme.good)
         };
         grid.at(x + 2, start + 1, Some(label_color), label, 999);
         grid.at(
@@ -225,7 +241,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     }
 
     let cy = start + th;
-    draw_box(grid, theme, x, cy, w, ch, "[SPLASH] ACTIVITY");
+    let title = if frame.view.gateway {
+        "[GATEWAY] ACTIVITY"
+    } else {
+        "[SPLASH] ACTIVITY"
+    };
+    draw_box(grid, theme, x, cy, w, ch, title);
     let section = x + 2;
     if w >= 67 {
         let section2 = x + w / 3;
@@ -409,7 +430,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
 
     if show_spill {
         let ky = sy + sh;
-        draw_box(grid, theme, x, ky, w, kh, "[SPLASH] KV SPILL");
+        let title = if frame.view.gateway {
+            "[GATEWAY] KV SPILL"
+        } else {
+            "[SPLASH] KV SPILL"
+        };
+        draw_box(grid, theme, x, ky, w, kh, title);
         grid.at(
             section,
             ky + 1,
