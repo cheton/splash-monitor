@@ -107,11 +107,36 @@ fn disk_guard() {
     let display = view.display();
     assert_ne!(display.cache_used_gib, "--");
     assert_ne!(display.cache_limit_gib, "--");
-    // The previous dashboard read this with jq's `//`, which treats `false`
-    // as missing: `"persistent":false` displays as `--`, never as `false`.
-    assert_eq!(display.cache_persistent, "--");
-    let view = parse_status(Some(r#"{"disk":{"persistent":true,"used_bytes":1}}"#));
-    assert_eq!(view.display().cache_persistent, "true");
+    assert_eq!(display.cache_persistent, "false");
+    assert_eq!(view.cache_writes_gated, "false");
+
+    for (body, persistent, gated) in [
+        (
+            r#"{"disk":{"persistent":true,"writes_gated":true}}"#,
+            "true",
+            "true",
+        ),
+        (
+            r#"{"disk":{"persistent":false,"writes_gated":true}}"#,
+            "false",
+            "true",
+        ),
+        (
+            r#"{"disk":{"persistent":true,"writes_gated":false}}"#,
+            "true",
+            "false",
+        ),
+        (
+            r#"{"disk":{"persistent":null,"writes_gated":null}}"#,
+            "--",
+            "--",
+        ),
+        (r#"{"disk":{}}"#, "--", "--"),
+    ] {
+        let view = parse_status(Some(body));
+        assert_eq!(view.display().cache_persistent, persistent, "{body}");
+        assert_eq!(view.cache_writes_gated, gated, "{body}");
+    }
 
     let view = parse_status(Some(r#"{"memory_actual":{"current_bytes":1}}"#));
     assert!(!view.disk_present);

@@ -127,6 +127,10 @@ impl MacProbe {
             gpu_active_ratio,
             gpu_temp: thermal.gpu,
             gpu_power_w,
+            compressed_bytes: memory_snapshot
+                .map(|snapshot| snapshot.compressor_pages.saturating_mul(self.page_size)),
+            wired_bytes: memory_snapshot
+                .map(|snapshot| snapshot.wire_pages.saturating_mul(self.page_size)),
             swap_used_bytes: swap.map(|usage| usage.used_bytes),
             swap_in_pages: memory_snapshot.map(|snapshot| snapshot.swapins),
             swap_out_pages: memory_snapshot.map(|snapshot| snapshot.swapouts),

@@ -8,7 +8,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     let cols = grid.cols;
     let rows = grid.rows;
     let x = 2usize;
-    let w = cols - 2;
+    let w = cols.saturating_sub(2);
+    let source = if frame.view.gateway {
+        "GATEWAY"
+    } else {
+        "SPLASH"
+    };
 
     if w < 24 || rows < 12 {
         grid.at(1, 1, Some(theme.data), "SPLASH MONITOR  |  q: quit", cols);
@@ -17,37 +22,52 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             2,
             Some(theme.text),
             &format!(
-                "Metal {}/{} GiB | Swap {} GiB",
-                frame.display.metal_gib,
-                frame.display.limit_gib,
-                frame.swap_used_gib()
+                "[{source}] Metal {}/{} GiB",
+                frame.display.metal_gib, frame.display.limit_gib
             ),
             cols,
         );
         grid.at(
             1,
             3,
-            Some(theme.muted),
+            Some(theme.text),
+            &format!("[LOCAL] Swap {} GiB", frame.swap_used_gib()),
+            cols,
+        );
+        grid.at(
+            1,
+            4,
+            Some(frame.pressure_color(theme)),
             &format!(
-                "{} | OUT {} MiB/s",
+                "[LOCAL] {} | OUT {} MiB/s",
                 frame.pressure_text(),
                 Frame::rate_text(frame.rates.swap_out_mib)
             ),
             cols,
         );
+        let (label, label_color) = if frame.view.gateway {
+            ("[GATEWAY] ONLINE", theme.data)
+        } else if frame.view.online {
+            ("[SPLASH] ONLINE", theme.good)
+        } else {
+            ("[SPLASH] OFFLINE", theme.critical)
+        };
+        grid.at(1, 5, Some(label_color), label, cols);
         return;
     }
 
     let header_h = 3usize;
-    // At 20+ rows all five dashboard sections survive.
+    // At 20+ rows all five dashboard sections survive in the wide profile.
     let (mut th, mut ch, mut sh, mut kh, show_spill) = if cols >= 66 && rows >= 20 {
         (5, 4, 5, 3, true)
     } else if cols >= 66 && rows >= 16 {
         (4, 4, 5, 0, false)
-    } else if cols >= 66 && rows >= 15 {
+    } else if rows >= 15 {
         (4, 4, 4, 0, false)
-    } else if cols >= 66 && rows >= 14 {
+    } else if rows >= 14 {
         (4, 4, 3, 0, false)
+    } else if cols < 66 && rows >= 13 {
+        (3, 4, 3, 0, false)
     } else {
         (3, 3, 3, 0, false)
     };
@@ -102,8 +122,13 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
         let leftw = (w - 2) / 2;
         let rightx = x + leftw + 2;
         let rightw = w - leftw - 2;
-        draw_box(grid, theme, x, start, leftw, th, "STATUS / INFERENCE");
-        draw_box(grid, theme, rightx, start, rightw, th, "HARDWARE / THERMAL");
+        let title = if frame.view.gateway {
+            "[GATEWAY] STATUS"
+        } else {
+            "[SPLASH] STATUS"
+        };
+        draw_box(grid, theme, x, start, leftw, th, title);
+        draw_box(grid, theme, rightx, start, rightw, th, "[LOCAL] CPU / GPU");
 
         let (label, label_color) = if !frame.view.online {
             ("● OFFLINE", theme.critical)
@@ -124,33 +149,30 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             grid.at(
                 x + 2,
                 start + 2,
-                Some(theme.muted),
-                &format!(
-                    "Weights {} | KV {}",
-                    weights_label(frame),
-                    frame.display.kv_capacity
-                ),
+                Some(frame.thermal_color(theme)),
+                &format!("Thermal {}", frame.view.thermal_state),
                 leftw - 4,
             );
         }
         if th >= 5 {
-            grid.at(
-                x + 2,
-                start + 3,
-                Some(theme.muted),
-                &format!(
-                    "Active {}   |   idle {}s",
-                    frame.view.active, frame.view.idle_secs
-                ),
-                leftw - 4,
-            );
+            let weights = weights_label(frame);
+            let kv = &frame.display.kv_capacity;
+            let text = if "Weights  | KV ".len() + weights.len() + kv.len() <= leftw - 4 {
+                format!("Weights {weights} | KV {kv}")
+            } else {
+                format!("Weights {weights}|KV {kv}")
+            };
+            grid.at(x + 2, start + 3, Some(theme.muted), &text, leftw - 4);
         }
         if th >= 6 {
             grid.at(
                 x + 2,
                 start + 4,
                 Some(theme.muted),
-                "Metal memory is not process RSS",
+                &format!(
+                    "Active {}   |   idle {}s",
+                    frame.view.active, frame.view.idle_secs
+                ),
                 leftw - 4,
             );
         }
@@ -181,52 +203,44 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 rightx + 2,
                 start + 3,
                 Some(theme.muted),
-                &format!(
-                    "Thermal {} | {}/{} GiB",
-                    frame.view.thermal_state, frame.display.metal_gib, frame.display.limit_gib
-                ),
+                "System-wide sensors",
+                right_inner,
+            );
+        }
+        if th >= 6 {
+            grid.at(
+                rightx + 2,
+                start + 4,
+                Some(theme.muted),
+                &frame.load_avg_text(),
                 right_inner,
             );
         }
     } else {
-        draw_box(grid, theme, x, start, w, th, "RESOURCE STATUS");
-        let (label, label_color) = if !frame.view.online {
-            ("OFFLINE", theme.critical)
-        } else if frame.view.gateway {
-            ("GATEWAY", theme.data)
-        } else {
-            ("ONLINE", theme.good)
-        };
-        grid.at(x + 2, start + 1, Some(label_color), label, 999);
+        draw_box(grid, theme, x, start, w, th, "[LOCAL] CPU / GPU");
         grid.at(
-            x + 11,
+            x + 2,
             start + 1,
-            Some(theme.text),
+            Some(theme.good),
             &format!(
-                "GPU {}% / {}°C",
+                "GPU {}%  {}°C",
                 frame.gpu_percent_text(),
                 frame.gpu_temp_text()
             ),
-            w - 14,
+            w - 4,
         );
         if th >= 4 {
-            grid.at(
-                x + 2,
-                start + 2,
-                Some(theme.muted),
-                &format!(
-                    "CPU {}% | Splash {}/{} GiB",
-                    frame.cpu_percent_text(),
-                    frame.display.metal_gib,
-                    frame.display.limit_gib
-                ),
-                w - 4,
-            );
+            grid.at(x + 2, start + 2, Some(theme.data), &cpu_line(frame), w - 4);
         }
     }
 
     let cy = start + th;
-    draw_box(grid, theme, x, cy, w, ch, "INFERENCE / CACHE ACTIVITY");
+    let title = if frame.view.gateway {
+        "[GATEWAY] ACTIVITY"
+    } else {
+        "[SPLASH] ACTIVITY"
+    };
+    draw_box(grid, theme, x, cy, w, ch, title);
     let section = x + 2;
     if w >= 67 {
         let section2 = x + w / 3;
@@ -272,20 +286,28 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
         );
     }
     if ch >= 4 {
-        grid.at(
-            section,
-            cy + 2,
-            Some(theme.muted),
-            &format!(
-                "Splash {}/{} GiB | Context {} | Disk {}/{} GiB",
-                frame.display.metal_gib,
-                frame.display.limit_gib,
-                frame.display.context_window,
-                frame.display.cache_used_gib,
-                frame.display.cache_limit_gib
-            ),
-            w - 4,
-        );
+        let metal = &frame.display.metal_gib;
+        let limit = &frame.display.limit_gib;
+        let context = &frame.display.context_window;
+        let disk_used = &frame.display.cache_used_gib;
+        let disk_limit = &frame.display.cache_limit_gib;
+        let metal_len = "Metal / GiB".len() + metal.len() + limit.len();
+        let context_len = " | Context ".len() + context.len();
+        let short_context_len = " | Ctx ".len() + context.len();
+        let disk_len = " | Disk / GiB".len() + disk_used.len() + disk_limit.len();
+        let available = w - 4;
+        let capacity = if metal_len + context_len + disk_len <= available {
+            format!(
+                "Metal {metal}/{limit} GiB | Context {context} | Disk {disk_used}/{disk_limit} GiB"
+            )
+        } else if metal_len + short_context_len + disk_len <= available {
+            format!("Metal {metal}/{limit} GiB | Ctx {context} | Disk {disk_used}/{disk_limit} GiB")
+        } else if metal_len + short_context_len <= available {
+            format!("Metal {metal}/{limit} GiB | Ctx {context}")
+        } else {
+            format!("Metal {metal}/{limit} GiB")
+        };
+        grid.at(section, cy + 2, Some(theme.muted), &capacity, available);
     }
     if ch >= 5 {
         grid.at(
@@ -301,7 +323,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     }
 
     let sy = cy + ch;
-    draw_box(grid, theme, x, sy, w, sh, "macOS PRESSURE / SWAP");
+    draw_box(grid, theme, x, sy, w, sh, "[LOCAL] MEMORY");
     let pressure_color = frame.pressure_color(theme);
     if cols < 66 {
         grid.at(
@@ -323,7 +345,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 section + 28,
                 sy + 1,
                 Some(theme.caution),
-                &format!("OUT {}", Frame::rate_text(frame.rates.swap_out_mib)),
+                &format!("OUT {} MiB/s", Frame::rate_text(frame.rates.swap_out_mib)),
                 w - 32,
             );
         }
@@ -333,10 +355,9 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 sy + 2,
                 Some(theme.muted),
                 &format!(
-                    "Free {}% | IN {} | KV {}pg",
+                    "Free index {}% | IN {} MiB/s",
                     frame.free_percent_text(),
-                    Frame::rate_text(frame.rates.swap_in_mib),
-                    frame.display.spilled_pages
+                    Frame::rate_text(frame.rates.swap_in_mib)
                 ),
                 w - 4,
             );
@@ -369,8 +390,8 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 section,
                 sy + 2,
                 Some(theme.muted),
-                &format!("Free {}%", frame.free_percent_text()),
-                12,
+                &format!("Free index {}%", frame.free_percent_text()),
+                w / 3 - 3,
             );
             grid.at(
                 x + w / 3,
@@ -378,13 +399,6 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
                 Some(theme.good),
                 &format!("IN {} MiB/s", Frame::rate_text(frame.rates.swap_in_mib)),
                 19,
-            );
-            grid.at(
-                x + 2 * w / 3,
-                sy + 2,
-                Some(theme.muted),
-                &format!("KV {} pages", frame.display.spilled_pages),
-                w / 3 - 2,
             );
         }
     }
@@ -405,14 +419,23 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             section,
             sy + 4,
             Some(theme.muted),
-            "Swap amount is historical; rates measure current I/O.",
+            &format!(
+                "Compressed {} GiB | Wired {} GiB",
+                frame.compressed_gib(),
+                frame.wired_gib()
+            ),
             w - 4,
         );
     }
 
     if show_spill {
         let ky = sy + sh;
-        draw_box(grid, theme, x, ky, w, kh, "KV SPILL / DISK I/O");
+        let title = if frame.view.gateway {
+            "[GATEWAY] KV SPILL"
+        } else {
+            "[SPLASH] KV SPILL"
+        };
+        draw_box(grid, theme, x, ky, w, kh, title);
         grid.at(
             section,
             ky + 1,
@@ -445,7 +468,7 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
             x + 1,
             used + 1,
             Some(theme.muted),
-            "Pressure + swap OUT trend matter more than total swap used.",
+            "Swap used can reflect earlier activity.",
             w - 2,
         );
     }

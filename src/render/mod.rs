@@ -336,7 +336,10 @@ pub fn plot_history(
             "Idle - no activity in observed samples",
             width,
         );
-        grid.repeat_at(x, y + height - 1, Some(ramp[2]), '·', width);
+        // A one-row graph would paint dots straight over that sentence.
+        if height > 1 {
+            grid.repeat_at(x, y + height - 1, Some(ramp[2]), '·', width);
+        }
         return;
     }
 
@@ -511,6 +514,20 @@ impl Frame<'_> {
         }
     }
 
+    pub fn compressed_gib(&self) -> String {
+        self.sample
+            .compressed_bytes
+            .map(num_gib)
+            .unwrap_or_else(|| "--".to_string())
+    }
+
+    pub fn wired_gib(&self) -> String {
+        self.sample
+            .wired_bytes
+            .map(num_gib)
+            .unwrap_or_else(|| "--".to_string())
+    }
+
     pub fn swap_used_gib(&self) -> String {
         self.sample
             .swap_used_bytes
@@ -567,9 +584,6 @@ impl Frame<'_> {
         }
         if self.sample.gpu_active_ratio.is_none() {
             return Some("GPU utilization unavailable on this macOS".to_string());
-        }
-        if let Some(path) = &self.sample.device_unresolved {
-            return Some(format!("Device I/O unresolved for {path}"));
         }
         None
     }

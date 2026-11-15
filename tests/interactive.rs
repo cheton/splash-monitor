@@ -154,7 +154,7 @@ fn interactive_run_enters_the_alternate_screen_and_restores_on_quit() {
     let mut child = spawn_on_pty(slave, &fixture_path, &server.url);
 
     assert!(
-        pty.wait_for("SPLASH CACHE / I/O", Duration::from_secs(20)),
+        pty.wait_for("Read -- MiB/s", Duration::from_secs(20)),
         "no full-layout frame drawn"
     );
     pty.send("q");
@@ -175,8 +175,30 @@ fn interactive_run_enters_the_alternate_screen_and_restores_on_quit() {
         "cursor must be restored before leaving the alternate screen"
     );
     assert_eq!(text.matches("q: quit").count(), 1, "frames drawn: {text}");
-    assert!(text.contains("STANDBY"));
-    assert!(text.contains("HARDWARE / THERMAL"));
+    let first_frame = text
+        .split("\x1b[H\x1b[J")
+        .nth(1)
+        .expect("first rendered frame");
+    let screen = common::grid_rows(first_frame, 110, 35).join("\n");
+    for expected in [
+        "STANDBY",
+        "[SPLASH] INFERENCE / REQUESTS",
+        "[SPLASH] MEMORY / CONFIG",
+        "[SPLASH] CACHE / KV SPILL",
+        "[LOCAL] CPU / GPU",
+        "[LOCAL] MEMORY",
+        "[LOCAL] DISK I/O",
+        "Metal 41.02/42.00 GiB",
+        "Compressed 3.00 GiB | Wired 5.00 GiB",
+        "Swap used 6.78 GiB",
+        "Device disk3 (all processes)",
+        "Read -- MiB/s",
+    ] {
+        assert!(
+            screen.contains(expected),
+            "missing {expected:?} in first frame:\n{screen}"
+        );
+    }
     assert!(server.wait_for_requests(1), "the run fetched /status");
 }
 
@@ -191,7 +213,7 @@ fn stray_keys_keep_running_and_ctrl_c_exits_cleanly() {
     let mut child = spawn_on_pty(slave, &fixture_path, &server.url);
 
     assert!(
-        pty.wait_for("SPLASH CACHE / I/O", Duration::from_secs(20)),
+        pty.wait_for("[SPLASH] CACHE / KV SPILL", Duration::from_secs(20)),
         "no full-layout frame drawn"
     );
     pty.send("\u{1b}[2~"); // Insert: a key that must not end the run.

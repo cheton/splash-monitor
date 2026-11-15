@@ -15,9 +15,10 @@
 
 - Inference throughput and request phases: decode tokens/s, prefill rate, TTFT and decode gap percentiles.
 - Splash cache read/write MiB/s from server counters, with in-session history graphs.
-- Per-core CPU utilization and die temperatures.
-- GPU utilization, power and thermal state.
-- macOS swap rates, swap usage, memory pressure and free memory percentage.
+- Per-core CPU utilization and die temperatures when the terminal has room; otherwise, a sensor summary.
+- GPU utilization and power, plus the Splash thermal state.
+- macOS memory pressure, free index, compressed and wired memory, and swap usage and rates.
+- Whole-device disk I/O for the configured cache volume.
 
 ## Install
 
@@ -49,7 +50,7 @@ The machine that runs the binary needs no Rust toolchain.
 | `--gateway URL` | oMLX gateway base URL; when `/status` fails, read `{gateway}/admin/api/stats` instead |
 | `--gateway-key KEY` | Gateway Bearer token (`auth.api_key` in `~/.omlx/settings.json`) |
 | `-l, --log FILE` | Append one row per frame to a CSV file |
-| `--cache-dir PATH` | Optional device-level I/O diagnostics for the volume holding `PATH` |
+| `--cache-dir PATH` | Select the local device to monitor for disk I/O using `PATH`, default `$TMPDIR` |
 | `--no-sensors` | Do not query hardware sensors |
 | `--once` | Render one frame, then exit (works in a pipe) |
 | `--no-color` | Disable colors |
@@ -67,7 +68,7 @@ The machine that runs the binary needs no Rust toolchain.
 | `SPLASH_API_KEY` | Bearer token, same form as `--api-key` |
 | `SPLASH_GATEWAY_URL` | Full gateway base URL, same form as `--gateway` |
 | `SPLASH_GATEWAY_API_KEY` | Gateway Bearer token, same form as `--gateway-key` |
-| `SPLASH_CACHE_DIR` | Default path for `--cache-dir` |
+| `SPLASH_CACHE_DIR` | Cache path to measure, overrides the `$TMPDIR` default |
 | `SPLASH_THEME` | Default palette: `auto`, `dark`, `light` |
 
 Precedence: `--url` > `SPLASH_URL` > `SPLASH_HOST` / `SPLASH_PORT` > default `http://127.0.0.1:18000`. `--theme` wins over `SPLASH_THEME`, and `--api-key` wins over `SPLASH_API_KEY`. A server that needs a key answers `401` to `/status`; the monitor then shows `OFFLINE`.
@@ -91,6 +92,12 @@ persistence and gate, context bounds.
 
 ## Where the numbers come from
 
+Panel titles identify the source: `[SPLASH]` readings come from the configured
+`/status` endpoint; `[GATEWAY]` readings come from the oMLX gateway fallback;
+`[LOCAL]` readings come from the Mac running the monitor, including when
+accessed through SSH. These labels do not indicate whether the server is
+physically remote.
+
 | Splash `GET /status` | Displayed as |
 |:--|:--|
 | `memory_plan`, `memory_actual`, `memory_governor` | Metal allocation, limit, context window, resident bound |
@@ -98,13 +105,50 @@ persistence and gate, context bounds.
 | `active_requests`, `scheduler` | Request phases and queue depth |
 | `disk.*`, `cache`, `kv_spill`, `thermal_state` | Cache capacity and I/O, hits, restores, KV spill, thermal class |
 
+Cache persistence and write-gate flags show `true` or `false`; missing values
+show `--`.
+
 | macOS source | Reading |
 |:--|:--|
 | Mach `host_processor_info` ticks | Aggregate and per-core CPU utilization |
 | IOHID `PMU tdie` services | CPU die temperatures |
 | AppleSMC `Tg*` keys | GPU temperature |
 | IOReport `GPU Stats`, `Energy Model` | GPU utilization and power |
-| `host_statistics64`, `sysctl vm.swapusage`, `kern.memorystatus_vm_pressure_level` | Swap counters, swap usage, pressure, free percent |
+| `host_statistics64`, `sysctl vm.swapusage`, `kern.memorystatus_vm_pressure_level` | Compressed and wired memory, swap counters, swap usage, pressure, free index |
+
+## Rates, zeros and waiting frames
+
+`Swap IN/OUT`, Splash cache `Read`/`Write`, local disk `Read`/`Write`, and
+decode tokens/s are differences between consecutive samples. The first frame
+has no earlier sample, so these rates show `--`. Rates appear after the next
+valid sample: 5 seconds after launch at the default interval, or 1 second after
+at `--interval 1`. History graphs show only observed samples.
+
+`0.00 MiB/s` is a measured zero, not a missing value. Splash cache graphs label
+an all-zero history `Idle - no activity in observed samples`; local disk
+sparklines show the observed rate history instead.
+
+`Swap IN/OUT` counts pages the kernel moved to or from swap between two refreshes.
+`Swap … GiB` is swap space in use right now (`sysctl vm.swapusage`). A Mac that
+still holds swap from an earlier memory-pressure event but pages nothing during
+your session shows a large GiB figure together with `0.00 MiB/s`. That is the
+expected pair, not a failed probe.
+
+The full layout (100 columns by 30 rows or larger) has Splash Cache, Inference,
+and Memory/config panels on the left, and local CPU/GPU, Memory, and Disk I/O
+panels on the right. Each pair of panels in the same row has equal height. The
+top row gets two extra lines when space permits; at the minimum size it gets one
+extra line so the inference history remains visible. Smaller terminals use a
+compact layout without the Disk I/O panel.
+
+`Compressed history` shows the local physical memory occupied by the compressor,
+not swap traffic or Splash memory. Older samples are on the left, newer samples
+on the right; the refresh interval sets the time between samples. Its vertical
+scale adjusts to the observed range, so the bottom is not necessarily zero and
+small changes can appear large. The current value is shown above the graph.
+Wired memory is non-pageable. These local readings are not Splash memory totals.
+The compact layout retains swap-usage history and shows compressed and wired
+gauges when space permits.
 
 ## CPU core temperatures
 
@@ -114,7 +158,21 @@ Unavailable sensors render `--`, never `0°C`.
 
 ## Cache and disk
 
-Splash reports cache bytes but not its path; the engine keeps the cache as temp files under the per-user `$TMPDIR` (`splash-cache-*`, about 26 GB on the reference machine) unless persistence is enabled. `--cache-dir` therefore monitors the whole volume that hosts the given path and is labeled device-wide.
+Splash reports its cache traffic but not its cache path. For local device I/O,
+the monitor resolves a **path on the Mac running the monitor** to a device. By
+default it uses that Mac's `$TMPDIR`, so `--cache-dir` is not needed when that
+is the device you want to observe. Use `--cache-dir PATH` or `SPLASH_CACHE_DIR`
+to choose a path on another device. Precedence: `--cache-dir` >
+`SPLASH_CACHE_DIR` > `$TMPDIR`.
+
+`[LOCAL] DISK I/O` reports the whole device, including every process, not Splash
+alone. If Splash runs on another machine, the local path does not identify its
+remote cache device. For Splash's own cache traffic, use the
+`[SPLASH] CACHE / KV SPILL` panel, which reads the server's counters. If the
+local path cannot be resolved, the Disk I/O panel reports the failure instead
+of guessing a device.
+
+Read and write sparklines show observed rates during this session, each scaled to its own history. Session totals add observed counter changes from the first valid sample; gaps and counter resets are not included. A device change starts a new history and totals.
 
 ## Logging
 
