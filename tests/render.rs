@@ -451,7 +451,7 @@ fn disk_panel_shows_rate_histories_and_observed_session_totals() {
 #[test]
 fn memory_panels_keep_each_metric_on_its_own_row() {
     let harness = distinct_harness();
-    for (cols, height) in [(100, 30), (140, 42)] {
+    for (cols, height, expected_memory_height) in [(100, 30, 9), (140, 42, 14)] {
         let rows = harness.visible_rows(cols, height);
         let panels = source_panels(&rows, cols, height);
         let server = panels.splash(MEMORY);
@@ -467,7 +467,7 @@ fn memory_panels_keep_each_metric_on_its_own_row() {
         }
         let memory = panels.local(LOCAL_MEMORY);
         let memory_rows: Vec<&str> = memory.lines().collect();
-        assert_eq!(memory_rows.len(), (height - 9) / 2, "{memory}");
+        assert_eq!(memory_rows.len(), expected_memory_height, "{memory}");
         for (index, expected) in [
             (1, "Pressure WARNING | Free index 30%"),
             (2, "Compressed 3.00 GiB | Wired 5.00 GiB"),
@@ -483,38 +483,33 @@ fn memory_panels_keep_each_metric_on_its_own_row() {
 #[test]
 fn full_layout_has_independent_source_aligned_rectangles() {
     let harness = fixture_harness();
-    for (cols, height) in [(100, 30), (101, 31), (120, 36), (140, 42)] {
+    for (cols, height, top_h, middle_h) in [
+        (100, 30, 12, 9),
+        (101, 31, 13, 9),
+        (120, 36, 16, 11),
+        (140, 42, 19, 14),
+    ] {
         let rows = physical_rows(&harness.render(cols, height, false), cols, height);
         let x = 2;
         let width = cols - 2;
         let right_width = (width - 2) / 2;
         let left_width = width - 2 - right_width;
         let right_x = x + left_width + 2;
-        let extra = height - 30;
-        let inference_h = 11 + extra / 2;
-        let cache_h = 10 + extra - extra / 2;
-        let hardware_h = (height - 9).div_ceil(2);
-        let cache_y = 4 + inference_h;
-        let server_memory_y = cache_y + cache_h;
-        let local_memory_y = 4 + hardware_h;
-        let local_memory_h = height - 9 - hardware_h;
-        let disk_y = local_memory_y + local_memory_h;
+        let middle_y = 4 + top_h;
+        let bottom_y = middle_y + middle_h;
 
         assert_rectangle(&rows, x, 1, width, 3, "SPLASH MONITOR");
         for (panel_x, top, panel_width, panel_height, title) in [
-            (x, 4, left_width, inference_h, INFERENCE),
-            (x, server_memory_y, left_width, 6, MEMORY),
-            (x, cache_y, left_width, cache_h, CACHE),
-            (right_x, 4, right_width, hardware_h, HARDWARE),
-            (right_x, local_memory_y, right_width, local_memory_h, LOCAL_MEMORY),
-            (right_x, disk_y, right_width, 6, DISK_IO),
+            (x, 4, left_width, top_h, CACHE),
+            (x, middle_y, left_width, middle_h, INFERENCE),
+            (x, bottom_y, left_width, 6, MEMORY),
+            (right_x, 4, right_width, top_h, HARDWARE),
+            (right_x, middle_y, right_width, middle_h, LOCAL_MEMORY),
+            (right_x, bottom_y, right_width, 6, DISK_IO),
         ] {
             assert_rectangle(&rows, panel_x, top, panel_width, panel_height, title);
         }
-        assert_eq!(server_memory_y + 5, height);
-        assert_eq!(disk_y, server_memory_y);
-        assert_eq!(disk_y + 5, height);
-        assert!(hardware_h.abs_diff(local_memory_h) <= 1);
+        assert_eq!(bottom_y + 5, height);
         for row in &rows[3..] {
             let gap: String = row.chars().skip(x + left_width - 1).take(2).collect();
             assert_eq!(gap, "  ", "content crossed the column gap at {cols}x{height}: {row}");
@@ -531,8 +526,8 @@ fn minimum_full_cache_retains_separate_read_and_write_charts() {
     let panels = source_panels(&rows, 100, 30);
     let cache = panels.splash(CACHE);
     let lines: Vec<&str> = cache.lines().collect();
-    assert_eq!(lines.len(), 10, "{cache}");
-    for (line, label) in [(lines[5], "R"), (lines[6], "W")] {
+    assert_eq!(lines.len(), 12, "{cache}");
+    for (line, label) in [(lines[5], "R"), (lines[7], "W")] {
         assert!(
             line.trim_start_matches('│').trim_start().starts_with(label)
                 && line.chars().any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)),
@@ -540,9 +535,20 @@ fn minimum_full_cache_retains_separate_read_and_write_charts() {
         );
     }
     assert!(
-        lines[8].contains("R ") && lines[8].contains("/ W ") && lines[8].contains("hit tokens"),
+        lines[10].contains("R ") && lines[10].contains("/ W ") && lines[10].contains("hit tokens"),
         "missing transfer totals: {cache}"
     );
+}
+
+#[test]
+fn minimum_full_inference_keeps_history_and_summary() {
+    let mut harness = fixture_harness();
+    harness.state.output_history = [1.0, 2.0].into_iter().collect();
+    let rows = harness.visible_rows(100, 30);
+    let panels = source_panels(&rows, 100, 30);
+    let inference = panels.splash(INFERENCE);
+    assert!(inference.chars().any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch)), "{inference}");
+    assert!(inference.contains("Engine avg") && inference.contains("TTFT p95"), "{inference}");
 }
 
 #[test]
@@ -891,14 +897,13 @@ fn unavailable_device_keeps_its_panel_and_missing_rates() {
     sample.volume = None;
     sample.device_unresolved = None;
     let harness = common::Harness::with(Some(BASE_STATUS), sample);
-    for (cols, height) in [(100, 30), (140, 42)] {
+    for (cols, height, memory_h) in [(100, 30, 9), (140, 42, 14)] {
         let raw = harness.render(cols, height, false);
         let rows = physical_rows(&raw, cols, height);
         let width = cols - 2;
         let right_width = (width - 2) / 2;
         let left_width = width - 2 - right_width;
         let right_x = 2 + left_width + 2;
-        let memory_h = (height - 9) / 2;
         assert_rectangle(&rows, right_x, height - 5 - memory_h, right_width, memory_h, LOCAL_MEMORY);
         assert_rectangle(&rows, right_x, height - 5, right_width, 6, DISK_IO);
         let panels = source_panels(&rows, cols, height);
@@ -911,7 +916,7 @@ fn unavailable_device_keeps_its_panel_and_missing_rates() {
 
 #[test]
 fn compressed_history_expands_and_respects_current_availability() {
-    for (cols, height) in [(100, 30), (140, 42)] {
+    for (cols, height, memory_h) in [(100, 30, 9), (140, 42, 14)] {
         for (values, current, active) in [
             (vec![1.4, 2.2, 0.6, 3.0], 3 * 1_073_741_824u64, true),
             (vec![0.0, 0.0, 0.0, 0.0], 0, false),
@@ -923,7 +928,7 @@ fn compressed_history_expands_and_respects_current_availability() {
             let panels = source_panels(&rows, cols, height);
             let memory = panels.local(LOCAL_MEMORY);
             let lines: Vec<&str> = memory.lines().collect();
-            assert_eq!(lines.len(), (height - 9) / 2, "{memory}");
+            assert_eq!(lines.len(), memory_h, "{memory}");
             assert!(lines[5].contains("Compressed history (GiB, auto)"), "{memory}");
             let graph = lines[6];
             if active {

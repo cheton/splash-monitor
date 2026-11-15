@@ -95,19 +95,15 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     let lw = w - gap - rw;
     let rx = x + lw + gap;
     let top = 4usize;
-    let extra = rows - 30;
-    let inference_h = 11 + extra / 2;
-    let cache_y = top + inference_h;
-    let cache_h = 10 + extra - extra / 2;
-    let memory_config_y = cache_y + cache_h;
-    let right_body_h = rows - 3 - 6;
-    let hardware_h = right_body_h.div_ceil(2);
-    let local_memory_y = top + hardware_h;
-    let local_memory_h = right_body_h - hardware_h;
-    let disk_y = local_memory_y + local_memory_h;
+    let body_h = rows - 3 - 6;
+    // Keep at least one graph row in the inference panel at the minimum size.
+    let middle_h = (body_h / 2).saturating_sub(2).max(9);
+    let top_h = body_h - middle_h;
+    let middle_y = top + top_h;
+    let bottom_y = middle_y + middle_h;
     let graphw = lw - 4;
     let graphw2 = rw - 4;
-    let gheight = inference_h.saturating_sub(8);
+    let gheight = middle_h.saturating_sub(8);
 
     // Header strip.
     draw_box(grid, theme, x, 1, w, 3, "SPLASH MONITOR");
@@ -133,12 +129,12 @@ pub fn render(grid: &mut Grid, frame: &Frame<'_>, theme: &Theme) {
     );
     grid.at(x + w - 12, 2, Some(theme.caution), "q: quit", 9);
 
-    render_inference(grid, frame, theme, x, top, lw, graphw, gheight, inference_h);
-    render_cache(grid, frame, theme, x, cache_y, lw, graphw, cache_h);
-    render_memory_config(grid, frame, theme, x, memory_config_y, lw);
-    render_hardware(grid, frame, theme, rx, top, rw, graphw2, hardware_h);
-    render_local_memory(grid, frame, theme, rx, local_memory_y, rw, local_memory_h);
-    render_disk_io(grid, frame, theme, rx, disk_y, rw);
+    render_cache(grid, frame, theme, x, top, lw, graphw, top_h);
+    render_inference(grid, frame, theme, x, middle_y, lw, graphw, gheight, middle_h);
+    render_memory_config(grid, frame, theme, x, bottom_y, lw);
+    render_hardware(grid, frame, theme, rx, top, rw, graphw2, top_h);
+    render_local_memory(grid, frame, theme, rx, middle_y, rw, middle_h);
+    render_disk_io(grid, frame, theme, rx, bottom_y, rw);
 }
 
 // Panel geometry is computed once in `render` and shared with the other panels.
